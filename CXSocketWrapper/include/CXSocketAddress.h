@@ -51,6 +51,11 @@ namespace CXCommunication
 			return m_addr;
 		}
 
+        inline void SetAddress(const struct sockaddr_in addr)
+        {
+            m_addr = addr;
+        }
+
 		inline unsigned short GetPort() const
 		{
 			return ntohs(m_addr.sin_port);
