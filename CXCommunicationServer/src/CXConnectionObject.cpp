@@ -20,6 +20,7 @@ Description£º
 #include <time.h>
 #include "CXConnectionObject.h"
 #include "CXLog.h"
+#include "PlatformFunctionDefine.h"
 extern CXLog g_cxLog;
 namespace CXCommunication
 {
@@ -97,6 +98,7 @@ namespace CXCommunication
 
     void CXConnectionObject::Build(cxsocket sock,uint64 uiConnIndex,sockaddr_in addr)
     {
+        Lock();
         Reset();
         m_sock = sock;
 
@@ -110,6 +112,7 @@ namespace CXCommunication
         //==3 closing
         //==5 closed
         m_nState = 1;
+        UnLock();
     }
 
     void CXConnectionObject::RecordCurrentPacketTime()
@@ -128,7 +131,7 @@ namespace CXCommunication
         int iBeginPointInBuffer = 0;
         bool bAllcateMemoryFails = false;
         char szInfo[1024] = { 0 };
-        
+
 
         m_lock.Lock();
 
@@ -138,12 +141,12 @@ namespace CXCommunication
         //printf_s(szInfo);
 
         m_tmLastPacketTime = time(NULL);
-        
-        if (m_pListReadBuf==NULL || 
+
+        if (m_pListReadBuf==NULL ||
             (m_pListReadBuf !=NULL && m_pListReadBuf->nSequenceNum > pBufObj->nSequenceNum))
         {
             pBufObj->pNext = m_pListReadBuf;
-            m_pListReadBuf = pBufObj;  
+            m_pListReadBuf = pBufObj;
             if (m_pListReadBufEnd == NULL)
             {
                 m_pListReadBufEnd = m_pListReadBuf;
@@ -173,7 +176,7 @@ namespace CXCommunication
 
         m_uiNumberOfReceivedBufferInList++;
         m_uiNumberOfPostBuffers--;
-        
+
 
         //debug
         /*
@@ -202,7 +205,7 @@ namespace CXCommunication
                 break;
             }
 
-                
+
             pCurBuf = m_pListReadBuf->pNext;
         }
         m_lock.Unlock();
@@ -216,12 +219,12 @@ namespace CXCommunication
         {
             sprintf_s(szInfo, 1024, "Getbuffer null ,This :%x, Cache address:%x\n", this, m_lpCacheObj);
             g_cxLog.Log(CXLog::CXLOG_ERROR, szInfo);
-            printf_s(szInfo);
+            printf(szInfo);
 
             m_lock.Unlock();
             return -3;
         }
-        
+
         uint64 uiPacketIndex = m_uiLastProcessBufferIndex;
         pCurBuf = m_pListReadBuf;
 
@@ -235,7 +238,7 @@ namespace CXCommunication
             iLeftLen = pCurBuf->wsaBuf.len;
             iNeedCopyLen = 0;
             iBeginPointInBuffer = pCurBuf->nCurDataPointer;
-            
+
 
             if (iLeftLen<0)
             {
@@ -245,12 +248,12 @@ namespace CXCommunication
                 sprintf_s(szInfo, 1024, "iLeftLen<0 ,connection id = %I64i,pCurBuf :%x\n",
                         m_uiConnectionIndex,pCurBuf);
                 g_cxLog.Log(CXLog::CXLOG_ERROR, szInfo);
-                printf_s(szInfo);
+                printf(szInfo);
                 break;
             }
 
             if(iUsedLen<sizeof(CXPacketHeader))//not have a complete header, copy from this buffer
-            { 
+            {
                 iNeedCopyLen = sizeof(CXPacketHeader)- iUsedLen;
                 if (iLeftLen <iNeedCopyLen)//not have a complete header
                 {
@@ -280,7 +283,7 @@ namespace CXCommunication
                 sprintf_s(szInfo, 1024, "Error packet,pBuf->wsaBuf.buf[0] == \'$\' ,connection id = %I64i,pBuf :%x\n",
                     m_uiConnectionIndex, pBuf);
                 g_cxLog.Log(CXLog::CXLOG_ERROR, szInfo);
-                printf_s(szInfo);
+                printf(szInfo);
             }
             if (iLeftLen + iUsedLen < iPacketLen) //not have a complete packet
             {
@@ -302,9 +305,9 @@ namespace CXCommunication
                 sprintf_s(szInfo, 1024, "Error packet,pHeader->dwFlag != 0x25f7 ,connection id = %I64i,pBuf :%x\n",
                     m_uiConnectionIndex, pBuf);
                 g_cxLog.Log(CXLog::CXLOG_ERROR, szInfo);
-                printf_s(szInfo);
+                printf(szInfo);
             }
-            
+
             iNeedCopyLen = (iPacketLen - iUsedLen);
             if (iPacketLen <= pBuf->wsaBuf.len)
             {
@@ -329,7 +332,7 @@ namespace CXCommunication
             }
 
             iBeginPointInBuffer += iNeedCopyLen;
-            
+
 
             int iTotalUsedLen = 0;
             PCXBufferObj pNeedDeleteBuf = m_pListReadBuf;
@@ -405,7 +408,7 @@ namespace CXCommunication
                 //    this, m_lpCacheObj);
                 sprintf_s(szInfo, 1024, "Getbuffer null ,This :%x, Cache address:%x\n", this, m_lpCacheObj);
                 g_cxLog.Log(CXLog::CXLOG_ERROR, szInfo);
-                printf_s(szInfo);
+                printf(szInfo);
 
                 bAllcateMemoryFails = true;
                 break;
@@ -433,11 +436,11 @@ namespace CXCommunication
 
     int CXConnectionObject::PostSend(byte *pData, int iDataLen)
     {
-        
+
         if (pData==NULL || iDataLen <= 0 || iDataLen>1024 * 1024)
             return INVALID_PARAMETER;
 
-        if (m_nState == 3) //closing
+        if (m_nState == 3 || m_nState == 4) //closing or closed
         {
             return -4;
         }
@@ -464,7 +467,7 @@ namespace CXCommunication
                 return -3;
             }
         }
-        m_uiNumberOfPostBuffers++;
+        //m_uiNumberOfPostBuffers++;
 
 #endif // WIN32
 
@@ -477,7 +480,7 @@ namespace CXCommunication
         if (pBufObj == NULL || pBufObj->wsaBuf.len <= 0 || pBufObj->wsaBuf.len>1024 * 1024)
             return INVALID_PARAMETER;
 
-        if (m_nState == 3) //closing
+        if (m_nState == 3 || m_nState == 4) //closing or closed
         {
             return -4;
         }
@@ -498,7 +501,8 @@ namespace CXCommunication
                 return -3;
             }
         }
-        m_uiNumberOfPostBuffers++;
+        //m_uiNumberOfPostBuffers++;
+#else
 
 #endif // WIN32
 
@@ -511,7 +515,7 @@ namespace CXCommunication
         if (pBufObj == NULL || pBufObj->wsaBuf.len <= 0 || pBufObj->wsaBuf.len>1024 * 1024)
             return INVALID_PARAMETER;
 
-        if (m_nState == 3) //closing
+        if (m_nState == 3 || m_nState == 4) //closing or closed
         {
             return -4;
         }
@@ -524,7 +528,16 @@ namespace CXCommunication
         if (WSASend(m_sock, &pBufObj->wsaBuf, 1, &dwSendLen, 0, NULL, NULL) != 0)
         {
             DWORD dwEr = ::WSAGetLastError();
-            
+
+            m_lock.Unlock();
+            return -3;
+        }
+#else
+        int iRet = SendData(pBufObj->wsaBuf.buf, pBufObj->wsaBuf.len,dwSendLen, 0);
+        if (iRet!=0)
+        {
+            DWORD dwEr = errno;
+
             m_lock.Unlock();
             return -3;
         }
@@ -537,14 +550,20 @@ namespace CXCommunication
 
     int CXConnectionObject::PostRecv(int iBufSize)
     {
+        #ifndef WIN32
+        return 0;
+        #endif // WIN32
+
         if (iBufSize<=0 || iBufSize>1024*1024)
             return INVALID_PARAMETER;
 
-        if (m_nState == 3) //closing
+        m_lock.Lock();
+        if (m_nState == 3 || m_nState == 4) //closing or closed
         {
+            m_lock.Unlock();
             return -4;
         }
-        
+
         PCXBufferObj pBufObj = GetBuffer();
         if (pBufObj == NULL)
         {
@@ -552,7 +571,6 @@ namespace CXCommunication
             return -2;
         }
 
-        m_lock.Lock();
         pBufObj->nSequenceNum = ++m_uiRecvBufferIndex;
         pBufObj->nOperate = OP_READ;
         //printf("*****Post buffer begin,buffer index = %I64i,pBufObj=%x,pBufObj->nOperate=%d\n", pBufObj->nSequenceNum,
@@ -561,7 +579,7 @@ namespace CXCommunication
 #ifdef WIN32
         DWORD dwRecv = 0;
         DWORD dwFlag = 0;
-        
+
         if (WSARecv(m_sock, &pBufObj->wsaBuf, 1,
             &dwRecv, &dwFlag, &pBufObj->ol, NULL) != 0)
         {
@@ -610,7 +628,7 @@ namespace CXCommunication
     }
 
     void CXConnectionObject::AddProcessPacketNumber()
-    { 
+    {
         m_lock.Lock();
         m_iProcessPacketNumber++;
         m_lock.Unlock();
@@ -645,4 +663,164 @@ namespace CXCommunication
         closesocket(m_sock);
         m_nState = 3;
     }
+
+    //have lock by CXConnectionObject::Lock();
+    int  CXConnectionObject::RecvData(PCXBufferObj *ppBufObj,DWORD &dwReadLen)
+    {
+        int nFlags=0;
+        int nReadLen=0;
+        dwReadLen = 0;
+
+        m_lock.Lock();
+        if (m_nState == 3 || m_nState == 4) //closing or closed
+        {
+            m_lock.Unlock();
+            return -4;
+        }
+
+        PCXBufferObj pBufObj = GetBuffer();
+        if (pBufObj == NULL)
+        {
+            m_lock.Unlock();
+            return -2;
+        }
+        *ppBufObj = pBufObj;
+
+        pBufObj->nSequenceNum = ++m_uiRecvBufferIndex;
+        pBufObj->nOperate = OP_READ;
+
+        int nRet = 0;
+
+        int nRecv = 0;
+        int nTotalRead = 0;
+        bool bReadOk = false;
+        int  nLeftBufLen = pBufObj->wsaBuf.len;
+        while(nLeftBufLen>0)
+        {
+            // must comfirm the sockCur is nonblocking.
+            nRecv = recv(m_sock, pBufObj->wsaBuf.buf + nTotalRead, nLeftBufLen, nFlags);
+            if(nRecv < 0)
+            {
+                if(errno == EAGAIN)//in this case, that is not left any data in the network buffer.
+                {
+                    bReadOk = true;
+                    nRet = -1;
+                    break;
+                }
+                else if (errno == ECONNRESET)//receive the RST packet from the peer
+                {
+
+                    Close();
+                    //CloseAndDisable(sockCur, events[i]);
+                    cout << "counterpart send out RST\n";
+                    nRet = -2;
+                    break;
+                }
+                else if (errno == EINTR)//interrupt by other event
+                {
+                    continue;
+                }
+                else // other error
+                {
+                    Close();
+                    cout << "unrecovable error\n";
+                    nRet = -2;
+                    break;
+                }
+            }
+            else if( nRecv == 0) //the peer had closed the socket normally and had sent the FIN packet.
+            {
+                //CloseAndDisable(sockCur, events[i]);
+                Close();
+                cout << "counterpart has shut off\n";
+                nRet = -2;
+                break;
+            }
+            else// recvNum > 0
+            {
+                nTotalRead += nRecv;
+                nLeftBufLen-=nRecv;
+                if ( nLeftBufLen == 0)
+                {
+                    bReadOk = true;
+                    break;
+                }
+            }
+        }
+
+        dwReadLen = pBufObj->wsaBuf.len = nTotalRead;
+        m_lock.Unlock();
+        return nRet;
+    }
+
+
+    //have lock by CXConnectionObject::Lock();
+    int  CXConnectionObject::SendData(char *pBuf,
+        int nBufLen, DWORD &dwSendLen, int nFlags)
+    {
+
+        int nRet = 0;
+
+        bool bWritten = false;
+        int nWritenLen = 0;
+        int nTotalWritenLen = 0;
+        int nLeftDataLen = nBufLen;
+
+        while(nLeftDataLen>0)
+        {
+            // must comfirm the sockCur is nonblocking.
+            nWritenLen = send(m_sock, pBuf + nTotalWritenLen, nLeftDataLen, 0);
+            if (nWritenLen == -1)
+            {
+                if (errno == EAGAIN)// all data had been sent
+                {
+                    bWritten = true;
+                    nRet = -1;
+                    break;
+                }
+                else if(errno == ECONNRESET)//receive the RST packet from the peer
+                {
+
+                    //CloseAndDisable(sockCur, events[i]);
+                    Close();
+                    cout << "counterpart send out RST\n";
+                    nRet = -2;
+                    break;
+                }
+                else if (errno == EINTR)//interrupt by other event
+                {
+                    continue;
+                }
+                else // other error
+                {
+
+                    nRet = -2;
+                    break;
+                }
+            }
+
+            if (nWritenLen == 0)//the peer had closed the socket normally and had sent the FIN packet.
+            {
+                //CloseAndDisable(sockCur, events[i]);
+                Close();
+                cout << "counterpart has shut off\n";
+                nRet = -3;
+                break;
+            }
+
+            // nTotalWritenLen > 0
+            nTotalWritenLen += nWritenLen;
+            if (nWritenLen == nLeftDataLen)
+            {
+                break;
+            }
+            nLeftDataLen-=nWritenLen;
+        }
+
+        dwSendLen = nTotalWritenLen;
+
+        return nRet;
+    }
+
+
 }

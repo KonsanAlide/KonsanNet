@@ -22,11 +22,30 @@ Description£º
 #include "SocketDefine.h"
 #include "CXSpinLock.h"
 #include "CXServerStructDefine.h"
-#include <unordered_map>
 #include <string>
 #include <list>
 using namespace std;
 #include "CXConnectionObject.h"
+
+#ifdef WIN32
+#include <unordered_map>
+#else
+#define GCC_VERSION (__GNUC__ * 10000 \
+    + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
+
+#if GCC_VERSION >= 40300
+#include <tr1/unordered_map>
+using namespace std::tr1;
+#define hash_map unordered_map
+
+#else
+#include <ext/hash_map>
+using namespace __gnu_cxx;
+#endif
+
+using namespace std;
+#endif
+
 namespace CXCommunication
 {
     class CXConnectionSession
@@ -53,7 +72,7 @@ namespace CXCommunication
             void RemoveData(string strKey);
 
             int  GetConnectionNumber();
-    
+
         protected:
         private:
             CXConnectionObject * m_pMmainConnetion;
@@ -63,7 +82,7 @@ namespace CXCommunication
             string m_strSessionGuid;
             string m_strTemporaryVerificationCode;
             unordered_map<string, void*> m_mapData;
-            
+
     };
 }
 #endif // CXCONNECTIONSESSION_H

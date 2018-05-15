@@ -20,6 +20,11 @@ Description£º
 #include "CXSessionPacketStructure.h"
 #include "CXPacketCodeDefine.h"
 
+#ifdef WIN32
+#else
+#include <string.h>
+#endif
+
 namespace CXCommunication
 {
     CXTcpClient::CXTcpClient()
@@ -38,7 +43,7 @@ namespace CXCommunication
     }
 
     //create a socket,set the address and flags
-    //Received value: ==RETURN_SUCCEED the socket was created successfully 
+    //Received value: ==RETURN_SUCCEED the socket was created successfully
     //                ==INVALID_PARAMETER invalid inputed parameters
     //                ==-2 socket creation failed
     //                ==-3 socket creation failed, a error accured when allocated memory
@@ -71,7 +76,7 @@ namespace CXCommunication
                 {
                     m_bCreated = true;
                 }
-            } 
+            }
 
             if (!m_bCreated)
             {
@@ -89,10 +94,10 @@ namespace CXCommunication
     }
 
     //connect to the peer by the ip address
-    //Received value: ==RETURN_SUCCEED the socket was created successfully 
+    //Received value: ==RETURN_SUCCEED the socket was created successfully
     //                ==INVALID_PARAMETER invalid inputed parameters
     //                ==-2 this socket object had not been created
-    //                ==-3 failed to connect the peer 
+    //                ==-3 failed to connect the peer
     int CXTcpClient::Connect(const CXSocketAddress& address)
     {
         if (IsConnected())
@@ -238,7 +243,7 @@ namespace CXCommunication
             return -2;
         }
 
-        
+
 
         int iSent = 0;
         unsigned int iOffset = 0;
@@ -353,7 +358,7 @@ namespace CXCommunication
             m_pSocket->SetLinger(true,1);
             m_bClosing = true;
             m_pSocket->Close();
-            //m_pSocket->Shutdown(); 
+            //m_pSocket->Shutdown();
         }
         else
         {
@@ -368,7 +373,7 @@ namespace CXCommunication
 
         delete m_pSocket;
         m_pSocket = NULL;
-        
+
         return 0;
     }
 
@@ -414,9 +419,9 @@ namespace CXCommunication
         int iTransRet = 0;
         int iTransLen = 0;
         iReadBytes = 0;
-  
+
         int iNeedSend = sizeof(CXPacketHeader);
-        
+
         iTransRet = Recv(pData, iNeedSend, iTransLen);
 
         if (iTransRet <=0 )
@@ -424,7 +429,7 @@ namespace CXCommunication
             return -3;
         }
         iReadBytes += iTransLen;
-        
+
         //receive the header
         PCXPacketHeader pTcpHeader = (PCXPacketHeader)pData;
 
@@ -439,20 +444,20 @@ namespace CXCommunication
         }
         iReadBytes += iTransLen;
 
-        return ERROR_SUCCESS;
+        return RETURN_SUCCEED;
     }
 
 
     //login to the server by the ip address, user name ,password
-    //Received value: ==RETURN_SUCCEED the socket was created successfully 
+    //Received value: ==RETURN_SUCCEED the socket was created successfully
     //                ==INVALID_PARAMETER invalid inputed parameters
     //                ==-2 this socket object had not created
-    //                ==-3 failed to connect the peer 
+    //                ==-3 failed to connect the peer
     int CXTcpClient::Login(const string &strUserName, const string &strPassword,
-        int iUserType, int iSessionType, 
+        int iUserType, int iSessionType,
         string strSessionGuid, string strVerifyCode)
     {
-        int iRet = ERROR_SUCCESS;
+        int iRet = RETURN_SUCCEED;
         if (strUserName == "" || strUserName.length()>128 || strPassword == ""|| strPassword.length()>256)
         {
             return INVALID_PARAMETER;
@@ -473,7 +478,7 @@ namespace CXCommunication
 
         string strUserData = strUserName + "\r" + strPassword;
         pMes->dwUserDataLen = strUserData.length()+1;
-        memcpy(pMes->szUserData, strUserData.c_str(), pMes->dwUserDataLen);  
+        memcpy(pMes->szUserData, strUserData.c_str(), pMes->dwUserDataLen);
 
         int iPacketLen = sizeof(CXSessionLogin)-1 + sizeof(CXPacketData)-1;
         iPacketLen += pMes->dwUserDataLen;
@@ -504,6 +509,6 @@ namespace CXCommunication
             return -5;
         }
 
-        return ERROR_SUCCESS;
+        return RETURN_SUCCEED;
     }
 }

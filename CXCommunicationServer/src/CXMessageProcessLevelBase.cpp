@@ -19,7 +19,7 @@ Description£º
 #include "CXPacketCodeDefine.h"
 #include "CXConnectionsManager.h"
 #include "CXCommunicationServer.h"
-
+//#include "PlatformDataTypeDefine.h"
 
 using namespace CXCommunication;
 void* ThreadProcess(void* lpvoid);
@@ -28,11 +28,19 @@ CXMessageProcessLevelBase::CXMessageProcessLevelBase()
 {
     m_pMessageQueue = NULL;
     m_bStart = false;
+    m_pSessionLevelProcess = NULL;
+    m_pUserMessageProcess = NULL;
 }
 
 
 CXMessageProcessLevelBase::~CXMessageProcessLevelBase()
 {
+    if (m_pSessionLevelProcess)
+        delete m_pSessionLevelProcess;
+    if (m_pUserMessageProcess)
+        delete m_pUserMessageProcess;
+    m_pSessionLevelProcess = NULL;
+    m_pUserMessageProcess = NULL;
 }
 
 int  CXMessageProcessLevelBase::Run()
@@ -41,11 +49,11 @@ int  CXMessageProcessLevelBase::Run()
     int iRet = m_threadProcess.Start(funThread, (void*)this);
     if (iRet != 0)
     {
-        printf_s("Create message process thread fails\n");
+        printf("Create message process thread fails\n");
         m_bStart = false;
         return -2;
     }
-    
+
     m_bStart = true;
     return RETURN_SUCCEED;
 }
@@ -69,19 +77,24 @@ int CXMessageProcessLevelBase::ProcessMessage()
                 {
                     if (pPacket->dwMesCode != CX_SESSION_LOGIN_CODE)
                     {
-                        printf_s("The first packet is not the login packet of the session\n");
+                        printf("The first packet is not the login packet of the session\n");
                     }
                     else
                     {
                         CXConnectionSession * pSession = NULL;
-                        iRet = m_sessionLevelProcess.SessionLogin(pMes,&pSession);
-                        if (iRet == ERROR_SUCCESS)
+                        if (m_pSessionLevelProcess == NULL)
+                        {
+                            m_pSessionLevelProcess = new CXSessionMessageProcess();
+                        }
+
+                        iRet = m_pSessionLevelProcess->SessionLogin(pMes,&pSession);
+                        if (iRet == RETURN_SUCCEED)
                         {
                             //pCon->SetSession((void*)pSession);
                         }
                         else
                         {
-                            printf_s("Login fails\n");
+                            printf("Login fails\n");
                         }
                     }
                 }
@@ -94,42 +107,63 @@ int CXMessageProcessLevelBase::ProcessMessage()
                     case CX_SESSION_LOGIN_CODE:
                         break;
                     case CX_SESSION_LOGOUT_CODE:
-                        iRet = m_sessionLevelProcess.SessionLogout(pMes, *pSession);
-                        if (iRet != ERROR_SUCCESS)
+                        iRet = m_pSessionLevelProcess->SessionLogout(pMes, *pSession);
+                        if (iRet != RETURN_SUCCEED)
                         {
-                            printf_s("SessionLogout fails\n");
+                            printf("SessionLogout fails\n");
                             if (iRet == -2)
                             {
+                                pCon->Lock();
                                 ProcessConnectionError(pCon);
+                                pCon->UnLock();
                             }
                         }
                         break;
                     case CX_SESSION_SETITING_CODE:
-                        iRet = m_sessionLevelProcess.SessionSetting(pMes, *pSession);
-                        if (iRet != ERROR_SUCCESS)
+                        
+                        iRet = m_pSessionLevelProcess->SessionSetting(pMes, *pSession);
+                        if (iRet != RETURN_SUCCEED)
                         {
-                            printf_s("SessionSetting fails\n");
+                            printf("SessionSetting fails\n");
                             if (iRet == -2)
                             {
+                                pCon->Lock();
                                 ProcessConnectionError(pCon);
+                                pCon->UnLock();
                             }
                         }
                         break;
                     default:
-                        iRet = m_userMessageProcess.ProcessPacket(pMes, pCon, pSession);
-                        if (iRet != ERROR_SUCCESS)
+                        if (m_pUserMessageProcess == NULL)
                         {
-                            printf_s("Process message fails\n");
+                            m_pUserMessageProcess = new CXUserMessageProcess();
+                        }
+                        iRet = m_pUserMessageProcess->ProcessPacket(pMes, pCon, pSession);
+                        if (iRet != RETURN_SUCCEED)
+                        {
+                            printf("Process message fails\n");
                             if (iRet == -2)
                             {
+                                pCon->Lock();
                                 ProcessConnectionError(pCon);
+                                pCon->UnLock();
                             }
                         }
 
                         break;
-                    } 
+                    }
                 }
                 pCon->FreeBuffer(pMes);
+
+                //<Process the closing event of this socket>
+                pCon->Lock();
+                pCon->ReduceReceivedPacketNumber();
+                if (pCon->GetState() == 3)//closing
+                {
+                    ProcessConnectionError(pCon);
+                }
+                pCon->UnLock();
+
                 pMes = (PCXBufferObj)pQueue->GetMessage();
 
             }
@@ -151,7 +185,7 @@ int  CXMessageProcessLevelBase::ProcessPacket(PCXBufferObj pBuf, CXConnectionObj
     pCon->ReduceReceivedPacketNumber();
 
     //CXSessionsManager *pSessionManager = pCon->GetSessionsManager();
-    //printf("####Process packet ,connection id = %I64i,datalen = %d,packet number :%I64i\n", 
+    //printf("####Process packet ,connection id = %I64i,datalen = %d,packet number :%I64i\n",
     //    pCon->GetConnectionIndex(), pBuf->wsaBuf.len, pCon->GetProcessPacketNumber());
 
     return RETURN_SUCCEED;
@@ -175,6 +209,6 @@ int CXMessageProcessLevelBase::ProcessConnectionError(CXConnectionObject * pCon)
 {
     CXCommunicationServer *pServer = (CXCommunicationServer *)pCon->GetServer();
     CXConnectionsManager & connectionsManager = pServer->GetConnectionManager();
-    pServer->CloseConnection(*pCon);
+    pServer->CloseConnection(*pCon,false);
     return 0;
 }

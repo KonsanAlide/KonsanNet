@@ -17,7 +17,7 @@ Description：
 *****************************************************************************/
 #ifdef WIN32
 #include<ws2tcpip.h>
-#else //WIN32 
+#else //WIN32
 
 #include  <sys/socket.h>      /* basic socket definitions */
 #include  <netinet/in.h>      /* sockaddr_in{} and other Internet defns */
@@ -25,7 +25,7 @@ Description：
 #include  <sys/epoll.h> /* epoll function */
 #include  <sys/resource.h> /*setrlimit */
 #include  <pthread.h>
-#endif //WIN32 
+#endif //WIN32
 
 #include "CXSocketServerKernel.h"
 #include "CXConnectionObject.h"
@@ -51,7 +51,7 @@ CXSocketServerKernel::~CXSocketServerKernel()
     //dtor
 }
 
-int CXSocketServerKernel::CreateTcpListenPort(cxsocket & sock, 
+int CXSocketServerKernel::CreateTcpListenPort(cxsocket & sock,
     unsigned short usPort,char *pszLocalIP )
 {
     if (usPort == 0 )
@@ -73,7 +73,7 @@ int CXSocketServerKernel::CreateTcpListenPort(cxsocket & sock,
     {
         sockLocal.sin_addr.s_addr = inet_addr(pszLocalIP);
     }
-    
+
 
     sock = socket(PF_INET, SOCK_STREAM, 0);
     if (sock == -1)
@@ -100,15 +100,15 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
         return INVALID_PARAMETER;
     }
 
-    
+
 #ifdef WIN32
     m_iocpHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-    if (NULL == m_iocpHandle) 
-    {    
+    if (NULL == m_iocpHandle)
+    {
         cout << "Failed to iocp handle " << endl;
         return -4;
     }
- 
+
     //SYSTEM_INFO mySysInfo;
     //GetSystemInfo(&mySysInfo);
 #else
@@ -120,11 +120,11 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
     }
 
 #endif
-    
+
     int iRet = CreateTcpListenPort(m_sockListen, iListeningPort);
     if (iRet != 0)
     {
-        printf_s("Failed to creat listen socket\n");
+        printf("Failed to creat listen socket\n");
 #ifdef WIN32
         CloseHandle(m_iocpHandle);
 #else
@@ -140,13 +140,13 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
     iRet = m_threadMonitor.Start(this->ThreadDetectConnection, (void*)this);
     if (iRet != 0)
     {
-        cout<< "CUserManagement pthread_create fails"<<endl;
+        cout<< "The monitor thread pthread_create fails"<<endl;
         Stop();
 
         return -8;
     }
     */
-    
+
     SetStarted(true);
 
     bool bCreateThread = true;
@@ -163,7 +163,7 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
             cout << "CXSocketServerKernel create epoll wait thread fails, allocate memory failed" << endl;
             pWaitThread = NULL;
         }
-        
+
         if (pWaitThread != NULL)
         {
             RunFun funThread = &ThreadWork;
@@ -228,7 +228,7 @@ int CXSocketServerKernel::Stop()
     }
 
     m_threadListen.Wait();
-    
+
 #ifdef WIN32
     CloseHandle(m_iocpHandle);
 #else
@@ -241,39 +241,6 @@ int CXSocketServerKernel::Stop()
 
 int CXSocketServerKernel::OnAccept(void *pServer, cxsocket sock, sockaddr_in &addrRemote)
 {
-    CXConnectionObject *pObj = new CXConnectionObject;
-
-    //PSocketObj  pObj = m_connectionManager.AddPendingConnection(nAcceptSock,(void*)this);
-    if (pObj != NULL)
-    {
-        pObj->Build(sock,1, addrRemote);
-        //pObj->sock = sockAccept;
-        //pObj->lpServer = (void*)this;
-        //memcpy(&pObj->addrRemote, &sockRemote, sizeof(sockRemote));
-        int iRet = AttachConnetionToModel(*pObj);
-        if (iRet == 0)
-        {
-            //when accept a socket, post some
-            for (int i = 0; i<4; i++)
-            {
-                PCXBufferObj pBufObj = new CXBufferObj;
-                memset(pBufObj, 0, sizeof(CXBufferObj));
-                pBufObj->wsaBuf.buf = pBufObj->buf;
-                pBufObj->wsaBuf.len = BUF_SIZE;
-                //WSAEVENT event = WSACreateEvent();
-                //pBufObj->ol.hEvent = event;
-
-                if (!PostRecv(*pObj, pBufObj))
-                {
-                    break;
-                }
-            }
-        }
-    }
-    else
-    {
-        closesocket(sock);
-    }
     return RETURN_SUCCEED;
 }
 
@@ -302,8 +269,8 @@ bool CXSocketServerKernel::SetNonblocking(int sock)
     {
         return false;
     }
-        
-    
+
+
 #else //WIN32
     opts = fcntl(sock, F_GETFL);
     if (opts<0)
@@ -349,7 +316,7 @@ int CXSocketServerKernel::ListenThread()
     struct sockaddr_in sockRemote;
     memset(&sockRemote,0,sizeof(sockRemote));
     socklen_t nAddrLen = sizeof(sockRemote);
-    
+
     while(IsStarted())
     {
         memset(&sockRemote,0,sizeof(sockRemote));
@@ -363,8 +330,9 @@ int CXSocketServerKernel::ListenThread()
         }
         else
         {
-            //SetNonblocking(sockAccept);
-
+#ifndef WIN32
+            SetNonblocking(sockAccept);
+#endif
             if (m_pfOnAccept != NULL)
             {
                 int iRet = m_pfOnAccept(GetServer(), sockAccept, sockRemote);
@@ -377,8 +345,8 @@ int CXSocketServerKernel::ListenThread()
             {
                 OnAccept(GetServer(),sockAccept, sockRemote);
             }
- 
-            
+
+
         }
     }
     return 0;
@@ -435,7 +403,7 @@ int  CXSocketServerKernel::WaitThread()
                     return -2;
                 }
             }
-            
+
             //char szInfo[1024] = {0};
             //sprintf_s(szInfo,1024, "Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x\n", dwNumberOfBytes, (DWORD)pBufObj);
             //g_cxLog.Log(CXLog::CXLOG_INFO, szInfo);
@@ -447,7 +415,7 @@ int  CXSocketServerKernel::WaitThread()
 
         }
 
-#else 
+#else
         int nfds = epoll_wait(m_epollHandle, events, 20, -1);
 
         cout << "\nepoll_wait returns" << endl;
@@ -461,8 +429,8 @@ int  CXSocketServerKernel::WaitThread()
             else if(events[i].events & EPOLLIN)//receive data 。
             {
                 cout << "A Data Packet received" << endl;
-                pConObj = (PConnectionObj)(events[i].data.ptr);
-                int iProcessRet = ProcessEpollEvent(pConObj);
+                pConObj = (CXConnectionObject*)(events[i].data.ptr);
+                int iProcessRet = ProcessEpollEvent(*pConObj);
 
             }
             else if(events[i].events & EPOLLOUT) // 如果有数据发送
@@ -487,7 +455,7 @@ BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LP
         {
             return TRUE;
         }
-        else if (dwErrorCode == ERROR_ABANDONED_WAIT_0) // the completion port handle was closed 
+        else if (dwErrorCode == ERROR_ABANDONED_WAIT_0) // the completion port handle was closed
         {
             return FALSE;
         }
@@ -501,7 +469,7 @@ BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LP
         PCXBufferObj pBufObj = NULL;
         pBufObj = CONTAINING_RECORD(lpOverlapped, CXBufferObj, ol);
 
-        if (dwTransDataOfBytes == 0) //the connection had been closed or interrupted 
+        if (dwTransDataOfBytes == 0) //the connection had been closed or interrupted
         {
             if (pBufObj != NULL)
             {
@@ -527,9 +495,9 @@ BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LP
     }
     return TRUE;
 }
-#endif
 
-//windows iocp event process 
+
+//windows iocp event process
 BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBufferObj pBufObj,
     DWORD dwTransDataOfBytes)
 {
@@ -575,41 +543,42 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
 
         conObj.FreeBuffer(pBufObj);
     }
-    
+
 
     return TRUE;
 }
+#endif // WIN32
+
 #ifndef WIN32
-//windows epoll event process 
+//windows epoll event process
 int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
 {
     int iRet = 0;
     int nRet = 0;
     while (nRet >= 0)
     {
-        char *pszData = new char[4096];
-        memset(pszData, 0, 4096);
-        int nReadLen = 0;
+        DWORD  dwReadLen = 0;
         //need to lock
-        nRet = RecvData(conObj, pszData, 4096, 0, nReadLen);
-        if (nReadLen>0)
+        PCXBufferObj pBufObj=NULL;
+        nRet = conObj.RecvData(&pBufObj,dwReadLen);
+        if (dwReadLen>0)
         {
             if (m_pfOnRead != NULL)
             {
-                //m_pfOnRead(pSock,pszData,nReadLen);
+                m_pfOnRead(conObj,pBufObj,dwReadLen);
             }
             else
             {
-                OnRead(conObj, pszData, nReadLen);
+                OnRead(conObj, pBufObj, dwReadLen);
             }
         }
         //need to unlock
 
         if (nRet == 0)
         {
-            if (m_pfOnRead != NULL)
+            if (m_pfOnClose != NULL)
             {
-                //m_pfOnClose(conObj);
+                m_pfOnClose(conObj);
             }
             else
             {
@@ -624,7 +593,7 @@ int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
         {
             if (m_pfOnClose != NULL)
             {
-                //m_pfOnClose(conObj);
+                m_pfOnClose(conObj);
             }
             else
             {
@@ -637,165 +606,6 @@ int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
 }
 
 #endif // Linux
-
-//have lock by PConnectionObj::lock
-int  CXSocketServerKernel::RecvData(CXConnectionObject& conObj,char *pBuf,int nBufLen,int nFlags,int &nReadLen)
-{
-    int nRet = 0;
-    int sockCur = conObj.GetSocket();
-
-    int nRecv = 0;
-    int nTotalRead = 0;
-    bool bReadOk = false;
-    int  nLeftBufLen = nBufLen;
-    while(nLeftBufLen>0)
-    {
-        // 确保sockfd是nonblocking的
-        nRecv = recv(sockCur, pBuf + nTotalRead, nLeftBufLen, nFlags);
-        if(nRecv < 0)
-        {
-            if(errno == EAGAIN)
-            {
-                // 由于是非阻塞的模式,所以当errno为EAGAIN时,表示当前缓冲区已无数据可读
-                // 在这里就当作是该次事件已处理处.
-                bReadOk = true;
-                nRet = -1;
-                break;
-            }
-            else if (errno == ECONNRESET)
-            {
-                    // 对方发送了RST
-                closesocket(sockCur);
-                    //CloseAndDisable(sockCur, events[i]);
-                    cout << "counterpart send out RST\n";
-                    nRet = -2;
-                    break;
-                }
-            else if (errno == EINTR)
-            {
-                // 被信号中断
-                continue;
-            }
-            else
-            {
-                //其他不可弥补的错误
-                closesocket(sockCur);
-                //CloseAndDisable(sockCur, events[i]);
-                cout << "unrecovable error\n";
-                nRet = -2;
-                break;
-            }
-        }
-        else if( nRecv == 0)
-        {
-            // 这里表示对端的socket已正常关闭.发送过FIN了。
-            //CloseAndDisable(sockCur, events[i]);
-            closesocket(sockCur);
-            cout << "counterpart has shut off\n";
-            nRet = -2;
-            break;
-        }
-        else// recvNum > 0
-        {
-            nTotalRead += nRecv;
-            nLeftBufLen-=nRecv;
-            if ( nLeftBufLen == 0)
-            {
-                // 安全读完
-                bReadOk = true;
-                break; // 退出while(1),表示已经全部读完数据
-            }
-        }
-    }
-
-    nReadLen = nTotalRead;
-    return nRet;
-}
-
-
-//have lock by PConnectionObj::lock
-int  CXSocketServerKernel::SendDataCallback(CXConnectionObject& conObj,char *pBuf,
-    int nBufLen,int nFlags,int &nSendLen)
-{
-
-    int nRet = 0;
-    int sockCur = conObj.GetSocket();
-
-
-    bool bWritten = false;
-    int nWritenLen = 0;
-    int nTotalWritenLen = 0;
-    int nLeftDataLen = nBufLen;
-
-    while(nLeftDataLen>0)
-    {
-        // 确保sockfd是非阻塞的
-        nWritenLen = send(sockCur, pBuf + nTotalWritenLen, nLeftDataLen, 0);
-        if (nWritenLen == -1)
-        {
-            if (errno == EAGAIN)
-            {
-                // 对于nonblocking 的socket而言，这里说明了已经全部发送成功了
-                bWritten = true;
-                nRet = -1;
-                break;
-            }
-            else if(errno == ECONNRESET)
-            {
-                // 对端重置,对方发送了RST
-                //CloseAndDisable(sockCur, events[i]);
-                closesocket(sockCur);
-                cout << "counterpart send out RST\n";
-                nRet = -2;
-                break;
-            }
-            else if (errno == EINTR)
-            {
-                // 被信号中断
-                continue;
-            }
-            else
-            {
-                // 其他错误
-                nRet = -2;
-                break;
-            }
-        }
-
-        if (nWritenLen == 0)
-        {
-            // 这里表示对端的socket已正常关闭.
-            //CloseAndDisable(sockCur, events[i]);
-            closesocket(sockCur);
-            cout << "counterpart has shut off\n";
-            nRet = -2;
-            break;
-        }
-
-        // nTotalWritenLen > 0
-        nTotalWritenLen += nWritenLen;
-        if (nWritenLen == nLeftDataLen)
-        {
-            break;
-        }
-        nLeftDataLen-=nWritenLen;
-    }
-
-
-/*
-    if (bWritten == true)
-    {
-        //设置用于读操作的文件描述符
-        ev.data.fd=sockCur;
-
-        //设置用于注测的读操作事件
-        ev.events=EPOLLIN | EPOLLET;
-
-        epoll_ctl(m_epollHandle,EPOLL_CTL_MOD,sockCur,&ev);
-    }
-*/
-    return nRet;
-}
 
 
 BOOL CXSocketServerKernel::PostAccept(PCXBufferObj pBufObj)
@@ -844,79 +654,9 @@ BOOL CXSocketServerKernel::PostAccept(PCXBufferObj pBufObj)
     return TRUE;
 }
 
-
-BOOL CXSocketServerKernel::PostSend(CXConnectionObject& conObj, PCXBufferObj pBufObj)
-{
-    if (pBufObj == NULL)
-        return FALSE;
-
-    /*if (pConObj->nSendPendingIOnum>m_nMaxSend)
-    {
-        return FALSE;
-    }*/
-
-    pBufObj->nOperate = OP_WRITE;
-
-    DWORD dwSend = 0;
-    WSABUF buf;
-    buf.buf = pBufObj->buf;
-    //buf.len = pBufObj->nBufLen;
-    //::EnterCriticalSection(&pSockObj->csLock);
-    if (WSASend(conObj.GetSocket(), &buf, 1, &dwSend, 0, &pBufObj->ol, NULL) != 0)
-    {
-        DWORD dwEr = ::WSAGetLastError();
-        if (dwEr != WSA_IO_PENDING)
-        {
-            //::LeaveCriticalSection(&pSockObj->csLock);
-            return FALSE;
-        }
-        //pConObj->nSendPendingIOnum++;
-    }
-    else
-    {
-        //pConObj->nSendPendingIOnum++;
-    }
-    //::LeaveCriticalSection(&pSockObj->csLock);
-    return TRUE;
-
-}
-
-BOOL CXSocketServerKernel::PostRecv(CXConnectionObject& conObj, PCXBufferObj pBufObj)
-{
-    if (pBufObj == NULL)
-        return FALSE;
-
-
-    pBufObj->nOperate = OP_READ;
-
-    DWORD dwRecv = 0;
-    DWORD dwFlag = 0;
-
-    //::EnterCriticalSection(&pConObj->csLock);
-    if (WSARecv(conObj.GetSocket(), &pBufObj->wsaBuf, 1, 
-        &dwRecv, &dwFlag, &pBufObj->ol, NULL) != 0)
-    {
-        DWORD dwEr = ::WSAGetLastError();
-        if (dwEr != WSA_IO_PENDING)
-        {
-            //::LeaveCriticalSection(&pConObj->csLock);
-            return FALSE;
-        }
-        //pConObj->nRecvPendingIOnum++;
-        //pConObj->nNextRecvSequenceNum++;
-    }
-    else
-    {
-        //pConObj->nRecvPendingIOnum++;
-        //pConObj->nNextRecvSequenceNum++;
-    }
-    //::LeaveCriticalSection(&pSockObj->csLock);
-    return TRUE;
-}
-
 int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
 {
-#ifdef WIN32     
+#ifdef WIN32
     HANDLE hRet = ::CreateIoCompletionPort((HANDLE)conObj.GetSocket(), m_iocpHandle, (DWORD)&conObj, 0);
     if (hRet == NULL)
     {
@@ -925,8 +665,8 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
         return -1;
     }
     //printf_s("BindConnetionToModel,sock=%d\n", conObj.GetSocket());
-  
-#else    
+
+#else
     printf("BindConnetionToModel linux\n");
     //register ev
     struct epoll_event ev;
@@ -947,6 +687,7 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
 
 int  CXSocketServerKernel::DetachConnetionToModel(CXConnectionObject &conObj)
 {
+#ifdef WIN32
     HANDLE hRet = ::CreateIoCompletionPort((HANDLE)conObj.GetSocket(), m_iocpHandle, (DWORD)&conObj, 0);
     if (hRet == NULL)
     {
@@ -955,16 +696,15 @@ int  CXSocketServerKernel::DetachConnetionToModel(CXConnectionObject &conObj)
         return -1;
     }
     printf_s("BindConnetionToModel,sock=%d\n", conObj.GetSocket());
-#ifdef WIN32    
-#else    
-    printf("BindConnetionToModel linux\n");
+
+#else
     //register ev
     struct epoll_event ev;
     //ev.events=EPOLLIN |EPOLLOUT | EPOLLET;
     //ev.events=EPOLLIN;
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = (void*)&conObj;
-    if (-1 == epoll_ctl(m_epollHandle, EPOLL_CTL_ADD, conObj.GetSocket(), &ev))
+    if (-1 == epoll_ctl(m_epollHandle, EPOLL_CTL_DEL, conObj.GetSocket(), &ev))
     {
         closesocket(conObj.GetSocket());
         cout << "Failed to add the new connection socket to the epoll model" << endl;

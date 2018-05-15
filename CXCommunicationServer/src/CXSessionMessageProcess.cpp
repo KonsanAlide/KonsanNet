@@ -3,6 +3,9 @@
 #include "CXSessionPacketStructure.h"
 #include "CXPacketCodeDefine.h"
 #include <string>
+#ifndef WIN32
+#include<string.h>
+#endif
 using namespace CXCommunication;
 using namespace std;
 
@@ -116,7 +119,7 @@ int CXSessionMessageProcess::SessionLogin(PCXBufferObj pBuf, CXConnectionSession
 
         break;
     }
-    
+
     int iTransRet = SendCommonMessageReply(pCon, CX_SESSION_LOGIN_REPLY_CODE, pSendBuf);
     pCon->FreeBuffer(pSendBuf);
     if (iTransRet == -2 || iRet==-2) //need to close connection

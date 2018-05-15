@@ -1,8 +1,16 @@
 #include "CXFileTcpClientTest.h"
 #include "CXFileTcpClient.h"
 #include "CXFilePacketStructure.h"
-#include <fcntl.h>  
-#include <io.h> 
+
+#ifdef WIN32
+#include <fcntl.h>
+#include <io.h>
+#else
+#include <sys/time.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#endif
 
 using namespace CXCommunication;
 CXFileTcpClientTest::CXFileTcpClientTest()
@@ -17,9 +25,21 @@ CXFileTcpClientTest::~CXFileTcpClientTest()
 int CXFileTcpClientTest::Test(int iNumber)
 {
     CXFileTcpClient client;
+#ifdef WIN32
     long lBegin = GetTickCount();
-    client.SetRemoteServerInfo("127.0.0.1",4355,"test","123");
-    string strRemoteFilePath = "D:/tool/TeamViewer_Setup_zhcn.exe";
+#else
+    struct timeval start, end;
+    gettimeofday( &start, NULL );
+    printf("start : %d.%d\n", start.tv_sec, start.tv_usec);
+    sleep(1);
+    gettimeofday( &end, NULL );
+    printf("end   : %d.%d\n", end.tv_sec, end.tv_usec);
+#endif
+    client.SetRemoteServerInfo("192.168.0.103",4355,"test","123");
+    string strRemoteFilePath = "/home/cheng/test/TeamViewer_Setup_zhcn.exe";
+
+    //client.SetRemoteServerInfo("192.168.0.105",4355,"test","123");
+    //string strRemoteFilePath = "D:/Tool/TeamViewer_Setup_zhcn.exe";
     string strLocalFilePath = "D:/DataReceive/TeamViewer_Setup_zhcn.exe";
 
     char szNumber[20] = {0};
@@ -90,20 +110,39 @@ int CXFileTcpClientTest::Test(int iNumber)
     {
         return -3;
     }
-
+#ifdef WIN32
     long lEnd = GetTickCount();
     long use = lEnd - lBegin;
-
     printf_s("Download file %s ,used time %d ms\n", strRemoteFilePath.c_str(), use);
+#else
+#endif
+
+
+    strRemoteFilePath = "D:/Tool/TeamViewer_Setup_zhcn.exe";
 
     if (!CompareFile(strRemoteFilePath, strLocalFilePath))
     {
-        printf_s("The data in two file is not same,fiel1=%s,file2=%s\n", strRemoteFilePath.c_str(), strLocalFilePath.c_str());
+        printf("The data in two file is not same,fiel1=%s,file2=%s\n", strRemoteFilePath.c_str(), strLocalFilePath.c_str());
         int l = 0;
     }
-    
+
     return 0;
 }
+
+#include <sys/stat.h>
+
+unsigned long get_file_size(const char *path)
+{
+    unsigned long filesize = -1;
+    struct stat statbuff;
+    if(stat(path, &statbuff) < 0){
+        return filesize;
+    }else{
+        filesize = statbuff.st_size;
+    }
+    return filesize;
+}
+
 bool CXFileTcpClientTest::CompareFile(string strFile1, string strFile2)
 {
 
@@ -118,14 +157,19 @@ bool CXFileTcpClientTest::CompareFile(string strFile1, string strFile2)
     {
         return false;
     }
-
+#ifdef WIN32
     int iFileLen1 = filelength(fileno(fileLocal1));
     int iFileLen2 = filelength(fileno(fileLocal2));
+#else
+    int iFileLen1 = get_file_size(strFile1.c_str());
+    int iFileLen2 = get_file_size(strFile2.c_str());
+
+#endif
     if (iFileLen1 != iFileLen2)
     {
         return false;
     }
-   
+
     byte byFileData[BUF_SIZE] = { 0 };
     byte byFileData2[BUF_SIZE] = { 0 };
     uint64 uiReadLen = 0;

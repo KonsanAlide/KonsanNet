@@ -18,12 +18,13 @@ Description£º
 
 #include "CXGuidGenerate.h"
 #ifdef WIN32
-#include <objbase.h> 
+#include <objbase.h>
 #else
 #include <uuid/uuid.h>
 #endif // WIN32
+#include "PlatformFunctionDefine.h"
 
-#include <stdio.h> 
+#include <stdio.h>
 
 CXGuidGenerate::CXGuidGenerate()
 {

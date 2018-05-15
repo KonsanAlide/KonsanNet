@@ -19,8 +19,18 @@ Description£º
 #include "CXPacketCodeDefine.h"
 #include "CXFilePacketStructure.h"
 #include <time.h>
-#include <fcntl.h>  
-#include <io.h>  
+#include <fcntl.h>
+#ifdef WIN32
+#include <io.h>
+#else // WIN32
+#include <errno.h>
+#include<string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#endif
+
+#include "CXFile64.h"
 
 using namespace CXCommunication;
 
@@ -40,8 +50,7 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
     if (pBuf != NULL)
     {
         pCon->AddProcessPacketNumber();
-        pCon->ReduceReceivedPacketNumber();
-        //printf("####Process packet ,connection id = %I64i,datalen = %d,packet number :%I64i\n", 
+        //printf("####Process packet ,connection id = %I64i,datalen = %d,packet number :%I64i\n",
         //    pCon->GetConnectionIndex(), pBuf->wsaBuf.len, pCon->GetProcessPacketNumber());
     }
 
@@ -50,7 +59,7 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
     DWORD dwMessageCode = pPacket->dwMesCode;
     int iReceiveDataLen = pBuf->wsaBuf.len;
 
-    FILE *pFile = NULL;
+    CXFile64 *pFile = NULL;
     switch (dwMessageCode)
     {
     case CX_FILE_OPEN_CODE:
@@ -66,18 +75,31 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
                 pReply->dwReplyCode = 201;
                 break;
             }
-            pFile = fopen(pMes->szFilePath, "rb");
-            if (pFile == NULL)
+            bool bHaveFileObject = false;
+            pFile = (CXFile64 *)pSession->GetData("file");
+            if (pFile ==NULL)
+            {
+                pFile = new CXFile64();
+            }
+            else
+            {
+                if (pFile->IsOpen())
+                {
+                    pFile->Close();
+                }
+                bHaveFileObject = true;
+            }
+            if (!pFile->Open(pMes->szFilePath,CXFile64::modeRead))
             {
                 pReply->dwReplyCode = 202;
 
                 char *pszError = strerror(errno);
                 strcpy(pReply->szData, pszError);
-                pReply->dwDataLen = strlen(pszError)+1;
+                pReply->dwDataLen = strlen(pszError) + 1;
                 break;
             }
-
-            pSession->SetData("file1", (void*)pFile);
+            if(!bHaveFileObject)
+                pSession->SetData("file", (void*)pFile);
 
             pReply->dwReplyCode = 200;
             break;
@@ -105,7 +127,7 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
         bool bNotReadFromFle = false;
         while (true)
         {
-           
+
             PCXFileRead pMes = (PCXFileRead)pPacket->buf;
             if (pMes->dwReadLen <= 0)
             {
@@ -114,7 +136,7 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
                 break;
             }
 
-            pFile = (FILE *)pSession->GetData("file1");
+            pFile = (CXFile64 *)pSession->GetData("file");
             if (pFile == NULL)
             {
                 pReply->dwReplyCode = 202;
@@ -134,35 +156,33 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
                 {
                     iNeedRead = pMes->dwReadLen - iTotalReadLen;
                 }
-                int iRead = fread(pReply->szData, 1, iNeedRead, pFile);
-                if (iRead != iNeedRead)
+                DWORD dwReadLen = 0;
+                if (pFile->Read((byte*)pReply->szData, iNeedRead, dwReadLen))
                 {
-                    if (iRead <= 0)
+                    if (dwReadLen != iNeedRead)
                     {
-                        pReply->dwReplyCode = 205;
-                        char *pszError = strerror(errno);
-                        strcpy(pReply->szData, pszError);
-                        pReply->dwDataLen = strlen(pszError) + 1;
-                        bReadFails = true;
+                        pReply->dwReplyCode = 204;
+                        iTotalReadLen += dwReadLen;
+                        pReply->dwDataLen = dwReadLen;
+                        bReadToEnd = true;
+                        pReply->dwReplyCode = 203;
+                        
                     }
                     else
                     {
-                        pReply->dwReplyCode = 204;
-                        iTotalReadLen += iRead;
-                        pReply->dwDataLen = iRead;
-                        if (feof(pFile) != 0)
-                        {
-                            bReadToEnd = true;
-                            pReply->dwReplyCode = 203;
-                        }
+                        pReply->dwDataLen = iNeedRead;
+                        pReply->dwReplyCode = 200;
+                        iTotalReadLen += dwReadLen;
                     }
                 }
                 else
                 {
-                    pReply->dwDataLen = iNeedRead;
-                    pReply->dwReplyCode = 200;
-                    iTotalReadLen += iRead;
-                } 
+                    pReply->dwReplyCode = 205;
+                    char *pszError = strerror(errno);
+                    strcpy(pReply->szData, pszError);
+                    pReply->dwDataLen = strlen(pszError) + 1;
+                    bReadFails = true;
+                }
 
                 int iRet = SendFileReadReply(pCon, CX_FILE_OPEN_REPLY_CODE, pBufSend);
                 //pCon->FreeBuffer(pBufSend);
@@ -194,8 +214,8 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
         {
             pCon->FreeBuffer(pBufSend);
         }
-        
-        
+
+
         break;
     }
         break;
@@ -210,7 +230,7 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
         {
             PCXFileClose pMes = (PCXFileClose)pPacket->buf;
 
-            pFile = (FILE *)pSession->GetData("file1");
+            pFile = (CXFile64 *)pSession->GetData("file");
             if (pFile == NULL)
             {
                 pReply->dwReplyCode = 202;
@@ -219,8 +239,8 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
                 break;
             }
 
-            fclose(pFile);
-            pSession->RemoveData("file1");
+            pFile->Close();
+            //pSession->RemoveData("file");
 
             pReply->dwReplyCode = 200;
             break;
@@ -240,7 +260,7 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
 
         while (true)
         {
-            pFile = (FILE *)pSession->GetData("file1");
+            pFile = (CXFile64 *)pSession->GetData("file");
             if (pFile == NULL)
             {
                 pReply->dwReplyCode = 202;
@@ -249,12 +269,18 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
                 break;
             }
 
-            //struct _stati64 fileStat;
-            //memset(&fileStat,0,sizeof(struct _stati64));
-            //_fstati64(pFile,&fileStat);
-            long sizeFile = filelength(fileno(pFile));
-            pReply->dwValue2 = sizeFile;
-            pReply->dwReplyCode = 200;
+            uint64 uiFileLen = 0;
+            if (pFile->GetFileLength(uiFileLen))
+            {
+                pReply->dwValue1 = uiFileLen >> 32;
+                pReply->dwValue2 = uiFileLen & 0xffffffff;
+                pReply->dwReplyCode = 200;
+            }
+            else
+            {
+                pReply->dwReplyCode = 201;
+            }
+
             break;
         }
         int iRet = SendCommonMessageReply(pCon, CX_FILE_GET_LENGTH_REPLY_CODE, pBufSend);
@@ -272,7 +298,7 @@ int CXUserMessageProcess::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * 
     return RETURN_SUCCEED;
 }
 
-int CXUserMessageProcess::SendCommonMessageReply(CXConnectionObject * pCon, 
+int CXUserMessageProcess::SendCommonMessageReply(CXConnectionObject * pCon,
     DWORD deMessageCode, PCXBufferObj pBuf)
 {
     PCXCommonMessageReply pReply = (PCXCommonMessageReply)(pBuf->wsaBuf.buf+ sizeof(CXPacketData) - 1);

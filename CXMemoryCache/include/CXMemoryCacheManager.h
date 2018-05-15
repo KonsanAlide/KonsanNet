@@ -13,24 +13,41 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-Description£ºThis class manage some memory cache object,a memory cache object 
+Description£ºThis class manage some memory cache object,a memory cache object
              maybe have a different structure size with the other cache object,
-             use to save data blocks of different size. 
+             use to save data blocks of different size.
 *****************************************************************************/
 #ifndef CXMEMORYCACHEMANAGER_H
 #define CXMEMORYCACHEMANAGER_H
 #include "../../CXCommon/include/PlatformDataTypeDefine.h"
 #include "../../CXLock/include/CXSpinLock.h"
 #include "CXMemoryCache.h"
+#ifdef WIN32
 #include <unordered_map>
-using std::unordered_map;
+using namespace std;
+#else
+#define GCC_VERSION (__GNUC__ * 10000 \
+    + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
+
+#if GCC_VERSION >= 40300
+#include <tr1/unordered_map>
+using namespace std::tr1;
+#define hash_map unordered_map
+
+#else
+#include <ext/hash_map>
+using namespace __gnu_cxx;
+#endif
+
+using namespace std;
+#endif
 
 //The maximum number of a class of cache
 #define MAX_CACHE_NUMBER_IN_ONE_KIND 10
 class CXMemoryCacheManager
 {
 public:
-    //iCacheNumber: The initialized number of a class of cache 
+    //iCacheNumber: The initialized number of a class of cache
     //iMaxMemorySize: the maximum available memory size,the unit is byte
     CXMemoryCacheManager(int iCacheNumber, int iMaxMemorySize);
     CXMemoryCacheManager();
@@ -41,7 +58,7 @@ public:
 
     void Destory();
 
-    //get a memory cache object,this memory cache object have contains 
+    //get a memory cache object,this memory cache object have contains
     //a lot of continuous small memory blocks of the same size,
     //the size of the small memory blocks had been set to iObjectSize
     CXMemoryCache* GetMemoryCache(int iObjectSize);
@@ -62,11 +79,11 @@ private:
     unordered_map<int, CXMemoryCache**> m_mapCaches;
     CXSpinLock m_lock;
 
-    //The initialized number of a class of cache 
+    //The initialized number of a class of cache
     int m_iInitCacheNumber;
 
     //the maximum available memory size, the unit is byte
-    INT64 m_iMaxUsableMemorySize;
-    
+    uint64 m_iMaxUsableMemorySize;
+
 };
 #endif // CXMEMORYCACHEMANAGER_H

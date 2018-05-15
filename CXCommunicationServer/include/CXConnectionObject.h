@@ -24,8 +24,10 @@ Description£º
 #include "CXServerStructDefine.h"
 #include "CXMemoryCache.h"
 #include "CXCommonPacketStructure.h"
+#ifdef WIN32
 #include <atomic>
-#include "CXMutexLock.h";
+#endif
+#include "CXMutexLock.h"
 
 
 using namespace std;
@@ -74,7 +76,7 @@ namespace CXCommunication
             int PostSendBlocking(PCXBufferObj pBufObj,DWORD &dwSendLen);
 
             int PostRecv(int iBufSize);
-            
+
 
             void SetObjectSizeInCache(int iObjectSize) { m_iObjectSizeInCache = iObjectSize; }
 
@@ -97,6 +99,7 @@ namespace CXCommunication
             uint64 GetNumberOfPostBuffers() { return m_uiNumberOfPostBuffers; }
 
             void SetState(int iState) { m_nState=iState; }
+            int  GetState() { return m_nState; }
 
             void Close();
 
@@ -109,9 +112,10 @@ namespace CXCommunication
             void SetSession(void *pSession) { m_pSession = pSession; }
             void *  GetSession() { return m_pSession; }
 
-            
+            int  RecvData(PCXBufferObj *ppBufObj,DWORD &dwReadLen);
+            int  SendData(char *pBuf,int nBufLen, DWORD &dwSendLen,int nFlags=0);
 
-    
+
         protected:
         private:
             cxsocket m_sock;
@@ -125,7 +129,12 @@ namespace CXCommunication
 
             uint64 m_uiConnectionIndex;
 
+#ifdef WIN32
             atomic<uint64> m_uiRecvBufferIndex;
+#else
+            uint64 m_uiRecvBufferIndex;
+
+#endif
             uint64 m_uiLastProcessBufferIndex;
 
             //==0 initialize
@@ -163,7 +172,7 @@ namespace CXCommunication
 
             //CXSpinLock m_lock;
             CXMutexLock m_lock;
-            CXSpinLock m_lockNumber;
+            CXSpinLock  m_lockNumber;
 
             POnProcessOnePacket m_pfnProcessOnePacket;
 
@@ -174,6 +183,7 @@ namespace CXCommunication
             // the index of the queue in the CXDataDispathLevelImpl object
             int m_iDispacherQueueIndex;
 
+#ifdef WIN32
             // the number of the received buffers in the receiving buffer list
             atomic<uint64> m_uiNumberOfReceivedBufferInList;
 
@@ -182,6 +192,18 @@ namespace CXCommunication
 
             // the number of the buffer by posting to iocp model
             atomic<uint64> m_uiNumberOfPostBuffers;
+#else
+            // the number of the received buffers in the receiving buffer list
+            uint64 m_uiNumberOfReceivedBufferInList;
+
+            // the number of the received packets in the message queue
+            uint64 m_uiNumberOfReceivedPacketInQueue;
+
+            // the number of the buffer by posting to iocp model
+            uint64 m_uiNumberOfPostBuffers;
+
+#endif
+
 
             uint64 m_iProcessPacketNumber;
 

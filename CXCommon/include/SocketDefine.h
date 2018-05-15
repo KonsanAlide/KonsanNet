@@ -28,25 +28,28 @@ typedef SOCKET cxsocket;
 #pragma warning(disable : 4786)
 #pragma warning(disable : 4996)
 
+typedef int socklen_t;
 
 #else //WIN32
 
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <unistd.h>
+#include <netinet/tcp.h>
 
 typedef int cxsocket;
-typedef SOCKET cxsocket;
-#define SOCKET_ERROR  (-1)  
+#define SOCKET_ERROR  (-1)
 #define INVALID_SOCKET (-1)
 #define SD_SEND     SHUT_RD
 #define SD_RECEIVE  SHUT_WR
 #define SD_BOTH     SHUT_RDWR
 
 #ifndef closesocket
-typedef close closesocket
+#define closesocket close
 #else //closesocket
 #endif //closesocket
+
 
 #endif //WIN32
 

@@ -20,6 +20,11 @@ Description£º
 #include "CXFilePacketStructure.h"
 #include "CXPacketCodeDefine.h"
 
+#ifdef WIN32
+#else
+#include <string.h>
+#endif
+
 
 using namespace CXCommunication;
 CXFileTcpClient::CXFileTcpClient()
@@ -43,7 +48,7 @@ CXFileTcpClient::~CXFileTcpClient()
 
 int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type)
 {
-    int iRet = ERROR_SUCCESS;
+    int iRet = RETURN_SUCCEED;
     if (strRemoteFilePath=="")
     {
         return INVALID_PARAMETER;
@@ -62,32 +67,32 @@ int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type)
     {
         if (strRemoteFilePath.compare(GetFilePathName())==0)
         {
-            return ERROR_SUCCESS;
+            return RETURN_SUCCEED;
         }
         else
         {
             Close();
         }
     }
-    m_bIsOpened = false; 
+    m_bIsOpened = false;
 
-    if (m_cxTcpClient.Create(false)!= ERROR_SUCCESS)
+    if (m_cxTcpClient.Create(false)!= RETURN_SUCCEED)
     {
         return -3;
     }
 
     CXSocketAddress addr(m_strRemoteIP.c_str(), m_unRemotePort);
-    if (m_cxTcpClient.Connect(addr)!= ERROR_SUCCESS)
+    if (m_cxTcpClient.Connect(addr)!= RETURN_SUCCEED)
     {
         return -4;
     }
 
-    if (m_cxTcpClient.Login(m_strRemoteUser, m_strRemotePassword) != ERROR_SUCCESS)
+    if (m_cxTcpClient.Login(m_strRemoteUser, m_strRemotePassword) != RETURN_SUCCEED)
     {
         return -5;
     }
-    
-    
+
+
     byte *pData = m_byPacketData;
     if (pData == NULL)
     {
@@ -141,7 +146,7 @@ int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type)
     }
     */
     m_bIsOpened = true;
-    return ERROR_SUCCESS;
+    return RETURN_SUCCEED;
 }
 
 //return value: ==ERROR_SUCCESS, if the data length received data is less than iWantReadLen, show that had read to the file end
@@ -149,7 +154,7 @@ int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type)
 //              ==-10 some error occurs in reading file, only read part of data
 int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
 {
-    int iRet = ERROR_SUCCESS;
+    int iRet = RETURN_SUCCEED;
     if (!IsOpen())
     {
         return -2;
@@ -201,7 +206,7 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
     if (iNeedReadLen == 0)//read to file end
     {
         *piReadLen = 0;
-        return ERROR_SUCCESS;
+        return RETURN_SUCCEED;
     }
     iNeedReadLen = pReply->dwDataLen;
     if (iNeedReadLen > iWantReadLen)
@@ -235,7 +240,7 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
 
 int  CXFileTcpClient::Write(const byte* pBuf, int iBufLen, int *piWrittenLen)
 {
-    int iRet = ERROR_SUCCESS;
+    int iRet = RETURN_SUCCEED;
     if (!IsOpen())
     {
         return -2;
@@ -294,7 +299,7 @@ int  CXFileTcpClient::Write(const byte* pBuf, int iBufLen, int *piWrittenLen)
         m_bIsOpened = false;
         return -8;
     }
-    return ERROR_SUCCESS;
+    return RETURN_SUCCEED;
 }
 
 int  CXFileTcpClient::Seek(uint64 pos, SEEKTYPE type)
@@ -315,7 +320,7 @@ int  CXFileTcpClient::Seek(uint64 pos, SEEKTYPE type)
     m_cxTcpClient.BuildHeader(pData, iPacketLen, CX_FILE_SEEK_CODE);
 
     PCXFileSeek pMes = (PCXFileSeek)(pData + sizeof(CXPacketHeader) + sizeof(DWORD));
-    pMes->dwSeekType = type; 
+    pMes->dwSeekType = type;
     pMes->uiSeekPos = pos;
 
     int iTransDataLen = 0;
@@ -345,14 +350,14 @@ int  CXFileTcpClient::Seek(uint64 pos, SEEKTYPE type)
         return -6;
     }
 
-    return ERROR_SUCCESS;
+    return RETURN_SUCCEED;
 }
 
 int CXFileTcpClient::Close()
 {
     if (!IsOpen())
     {
-        return ERROR_SUCCESS;
+        return RETURN_SUCCEED;
     }
     int iPacketLen = sizeof(CXFileClose) + sizeof(DWORD) + sizeof(CXPacketHeader);
     byte *pData = m_byPacketData;
@@ -368,7 +373,7 @@ int CXFileTcpClient::Close()
     PCXFileClose pMes = (PCXFileClose)(pData + sizeof(CXPacketHeader) + sizeof(DWORD));
     pMes->dwType = 1;
     pMes->dwDataLen = 0;
- 
+
     int iTransDataLen = 0;
     int iTransRet = m_cxTcpClient.Send(pData, iPacketLen, iTransDataLen);
     if (iTransRet != iPacketLen)
@@ -396,7 +401,7 @@ int CXFileTcpClient::Close()
         return -8;
     }
     m_bIsOpened = false;
-    return ERROR_SUCCESS;
+    return RETURN_SUCCEED;
 }
 
 void CXFileTcpClient::SetRemoteServerInfo(string strRemoteIP, unsigned short unRemotePort,
@@ -412,7 +417,7 @@ int CXFileTcpClient::GetFileLength(uint64 & uiFileLength)
 {
     if (!IsOpen())
     {
-        return ERROR_SUCCESS;
+        return RETURN_SUCCEED;
     }
     int iPacketLen = sizeof(CXPacketData)+ sizeof(CXPacketHeader);
     byte *pData = m_byPacketData;
@@ -453,8 +458,8 @@ int CXFileTcpClient::GetFileLength(uint64 & uiFileLength)
     }
 
     uiFileLength = pReply->dwValue1;
-    uiFileLength <<= 8;
+    uiFileLength <<= 32;
     uiFileLength += pReply->dwValue2;
 
-    return ERROR_SUCCESS;
+    return RETURN_SUCCEED;
 }

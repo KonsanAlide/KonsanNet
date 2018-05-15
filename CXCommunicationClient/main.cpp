@@ -9,7 +9,10 @@
 #include "CXCommonPacketStructure.h"
 #include "CXSessionPacketStructure.h"
 #include "CXPacketCodeDefine.h"
-
+#ifdef WIN32
+#else
+#include <pthread.h>
+#endif
 
 using namespace std;
 using namespace CXCommunication;
@@ -35,37 +38,38 @@ int MakePacketBuf(PCXPacketData &ppPacket, int iDataLen)
 }
 
 
-int ThreadConnectAndSend(PVOID pVoid)
+int ThreadConnectAndSend(void* pVoid)
 {
     CXFileTcpClientTest test;
-    test.Test((int)pVoid);
+    test.Test((long)pVoid);
     return -1;
-    CXSocketAddress addr("127.0.0.1", 4355);
-    int nThreadID = (int)pVoid;
-
+    CXSocketAddress addr("192.168.0.103", 4355);
+    long nThreadID = (long)pVoid;
+#ifdef WIN32
     DWORD dwThreadID = GetCurrentThreadId();
+#else
+    DWORD dwThreadID = pthread_self();
+#endif
     for (int i = 0; i<1; i++)
     {
         CXTcpClient tcpClient;
 
         if (RETURN_SUCCEED != tcpClient.Create())
         {
-            printf_s("Failed to create socket ,thread id = %d, id=%d\n", nThreadID, i);
+            printf("Failed to create socket ,thread id = %l, id=%d\n", nThreadID, i);
             return 1;
         }
         //TRACE("Try to connect to peer ,thread id = %d, id=%d\n", nThreadID, i);
 
-        LARGE_INTEGER liLast;
-        liLast.QuadPart = 0;
         char szDesc[2048] = { 0 };
         sprintf(szDesc, "Try to connect to peer ,thread id = %d, id=%d\n", nThreadID, i);
         //TraceWasteTime(liLast,szDesc);
         if (RETURN_SUCCEED != tcpClient.Connect(addr))
         {
-            printf_s("Failed to connect to peer ,thread id = %d, id=%d\n", nThreadID, i);
+            printf("Failed to connect to peer ,thread id = %d, id=%d\n", nThreadID, i);
             return 1;
         }
-        printf_s("Had connected to peer ,thread id = %d, id=%d\n", nThreadID, i);
+        printf("Had connected to peer ,thread id = %d, id=%d\n", nThreadID, i);
         //sprintf(szDesc, "Had connected to peer ,thread id = %d\n", nThreadID);
 
         //TraceWasteTime(liLast, szDesc);
@@ -86,7 +90,7 @@ int ThreadConnectAndSend(PVOID pVoid)
         }
 
     }
-    printf_s("######Thread id = %d exit\n", nThreadID);
+    printf("######Thread id = %d exit\n", nThreadID);
     return 0;
 }
 void *ThreadWork(void *pVoid)
@@ -98,11 +102,11 @@ void *ThreadWork(void *pVoid)
 
 int main()
 {
-    g_networkInit.InitEnv(); 
+    g_networkInit.InitEnv();
 
     if (!g_cxLog.Initialize("D:\\C++Project\\CXNetworkCommunication\\trunk\\log\\clientlog.log"))
     {
-        printf_s("Failed to initialize the log recorder.\n");
+        printf("Failed to initialize the log recorder.\n");
         return -1;
     }
 
@@ -112,7 +116,7 @@ int main()
     {
         workThread[i].Start(ThreadWork,(void*)i);
     }
-    
+
 
     //server.WaitThreadsExit();
     cin.get();

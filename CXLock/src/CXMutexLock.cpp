@@ -16,6 +16,12 @@ limitations under the License.
 Description£º
 *****************************************************************************/
 #include "CXMutexLock.h"
+#ifndef WIN32
+#include <errno.h>
+#include<string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 
 CXMutexLock::CXMutexLock(bool bLock,string strMutexName)
 {
@@ -25,63 +31,65 @@ CXMutexLock::CXMutexLock(bool bLock,string strMutexName)
     m_mutex = NULL;
     m_mutex = ::CreateMutex(NULL,FALSE,strMutexName.c_str());
 #else
-    m_mutex = null;
-    int ret = pthread_mutexattr_init(&m_mattr);
-    if ((ret != 0) {
-        fprintf(stderr, "create mutex attribute error. msg:%s", strerror(ret));
+    m_mutex = PTHREAD_MUTEX_INITIALIZER;
+    int iRet = pthread_mutexattr_init(&m_mattr);
+    if (iRet != 0)
+    {
+        printf("create mutex attribute error. msg:%s", strerror(errno));
         exit(1);
     }
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutexattr_settype(&m_mattr, PTHREAD_MUTEX_RECURSIVE);
 	pthread_mutex_init(&m_mutex, &m_mattr);
-	
+
 #endif
 
     if (bLock)
     {
         Lock();
     }
-	
+
 }
 
 CXMutexLock::~CXMutexLock()
 {
+
+#ifdef WIN32
     if (m_mutex != NULL)
     {
-#ifdef WIN32
         ::CloseHandle(m_mutex);
-#else
-        if (m_bInitLocked)
-            pthread_mutex_unlock(&m_mutex);
-        pthread_mutex_destroy(&m_mutex);
-#endif
     }
-
-#ifndef WIN32
+#else
+    if (m_bInitLocked)
+        pthread_mutex_unlock(&m_mutex);
+    pthread_mutex_destroy(&m_mutex);
     pthread_mutexattr_destroy(&m_mattr);
 #endif
 
-    
 }
 
 void CXMutexLock::Lock()
 {
+
+#ifdef WIN32
     if (m_mutex != NULL)
     {
-#ifdef WIN32
         ::WaitForSingleObject(m_mutex, INFINITE);
-#else
-        pthread_mutex_lock(&m_mutex);
-#endif
     }
+#else
+    pthread_mutex_lock(&m_mutex);
+#endif
+
 }
 void CXMutexLock::Unlock()
 {
+
+#ifdef WIN32
     if (m_mutex != NULL)
     {
-#ifdef WIN32
         ::ReleaseMutex(m_mutex);
-#else 
-        pthread_mutex_unlock(&m_mutex);
-#endif
     }
+#else
+    pthread_mutex_unlock(&m_mutex);
+#endif
+
 }

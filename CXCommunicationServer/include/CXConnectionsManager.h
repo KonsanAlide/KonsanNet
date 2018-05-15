@@ -22,9 +22,22 @@ Description£º
 #ifdef WIN32
 #include <unordered_map>
 #else
+#define GCC_VERSION (__GNUC__ * 10000 \
+    + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
+
+#if GCC_VERSION >= 40300
+#include <tr1/unordered_map>
+using namespace std::tr1;
+#define hash_map unordered_map
+
+#else
 #include <ext/hash_map>
 using namespace __gnu_cxx;
 #endif
+
+using namespace std;
+#endif
+
 #include <map>
 #include <queue>
 #include "CXSpinLock.h"

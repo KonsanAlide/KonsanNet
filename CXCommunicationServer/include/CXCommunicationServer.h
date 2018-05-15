@@ -63,7 +63,7 @@ namespace CXCommunication
         CXMemoryCacheManager &GetMemoryCacheManger() { return m_memoryCacheManager; }
         CXDataDispathLevelImpl &GetDataDispathManger() { return m_dataDispathManager; }
 
-        void CloseConnection(CXConnectionObject &conObj);
+        void CloseConnection(CXConnectionObject &conObj,bool bLockBySelf=true);
 
         CXSessionsManager &  GetSessionsManager() { return m_sessionsManager; }
 

@@ -16,6 +16,11 @@ limitations under the License.
 Description£º
 *****************************************************************************/
 #include "CXSocketAddress.h"
+#ifndef WIN32
+#include <string.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#endif
 
 namespace CXCommunication
 {
@@ -28,7 +33,7 @@ namespace CXCommunication
             m_addr.sin_addr.s_addr = inet_addr(ip);
             m_addr.sin_port = htons(port);
         }
-		
+
         m_b64bitAddr = b64bitAddr;
 	}
 
@@ -44,7 +49,7 @@ namespace CXCommunication
 	{
         char buffer[32] = {0};
 		byte *bytes = (byte*) &m_addr.sin_addr;
-        snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);
+        sprintf(buffer, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);
         return buffer;
 	}
 }

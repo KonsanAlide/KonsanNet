@@ -25,7 +25,11 @@ Description£º
 
 #ifndef GetLastError
 DWORD GetLastError();
-#endif GetLastError
+#endif //GetLastError
+
+#ifndef sprintf_s
+#define sprintf_s snprintf
+#endif
 
 #endif //WIN32
 

@@ -109,7 +109,7 @@ namespace CXCommunication
 
 		virtual int Ioctl(int request, int& arg);
 		virtual int Ioctl(int request, void* arg);
-		
+
 	};
 }
 

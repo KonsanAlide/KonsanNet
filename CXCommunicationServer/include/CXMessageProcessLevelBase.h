@@ -54,8 +54,8 @@ namespace CXCommunication
     private:
         CXThread m_threadProcess;
         CXMessageQueue *m_pMessageQueue;
-        CXSessionMessageProcess m_sessionLevelProcess;
-        CXUserMessageProcess m_userMessageProcess;
+        CXSessionMessageProcess *m_pSessionLevelProcess;
+        CXUserMessageProcess *m_pUserMessageProcess;
 
         bool m_bStart;
     };

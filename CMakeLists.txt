@@ -20,7 +20,7 @@ add_subdirectory(CXMemoryCache)
 add_subdirectory(CXSocketWrapper)
 add_subdirectory(CXThread)
 add_subdirectory(CXLog)
-#add_subdirectory(CXFile)
+add_subdirectory(CXFile)
 add_subdirectory(CXCommunicationClient)
 add_subdirectory(CXCommunicationServer)
 

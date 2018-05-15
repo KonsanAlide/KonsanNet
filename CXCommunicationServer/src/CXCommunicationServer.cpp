@@ -18,7 +18,8 @@ Description£º
 #include "CXCommunicationServer.h"
 #include "CXMessageProcessLevelBase.h"
 #include "CXLog.h"
- 
+#include "PlatformFunctionDefine.h"
+
 
 using namespace CXCommunication;
 extern CXLog g_cxLog;
@@ -46,7 +47,7 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
         cout << "Failed to start memory cache manager" << endl;
         return -2;
     }
-    
+
     m_socketServerKernel.SetOnReadCallbackFun(CXCommunicationServer::OnRecv);
     m_socketServerKernel.SetOnCloseCallbackFun(CXCommunicationServer::OnClose);
     m_socketServerKernel.SetOnAcceptCallbackFun(CXCommunicationServer::OnAccept);
@@ -140,20 +141,27 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
     //g_cxLog.Log(CXLog::CXLOG_INFO, szInfo);
     //printf_s(szInfo);
 
-    //printf_s("OnRecv1:Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d\n", 
+    //printf_s("OnRecv1:Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d\n",
     //    dwTransDataOfBytes, (DWORD)pBufObj, pBufObj->nOperate);
     CXCommunicationServer * pComServer = (CXCommunicationServer*)conObj.GetServer();
     bool bNeedClose = false;
     int iRet = conObj.PostRecv(BUF_SIZE);
     if (iRet != 0)
     {
-        bNeedClose = true; 
+        bNeedClose = true;
     }
 
     iRet = conObj.RecvPacket(pBufObj, dwTransDataOfBytes);
     if (iRet != 0)
     {
         bNeedClose = true;
+    }
+    if (!bNeedClose)
+    {
+        if (conObj.GetState() == 3)//closing
+        {
+            bNeedClose = true;
+        }
     }
 
     if (bNeedClose)
@@ -169,21 +177,36 @@ int  CXCommunicationServer::OnClose(CXConnectionObject &conObj)
 {
     CXCommunicationServer * pComServer = (CXCommunicationServer*)conObj.GetServer();
     pComServer->CloseConnection(conObj);
-    
+
     return RETURN_SUCCEED;
 }
 
-void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj)
+void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLockBySelf)
 {
-    conObj.Close();
+    bool bFreeConnection = false;
+
+    if(bLockBySelf)
+        conObj.Lock();
+    if (conObj.GetState() == 4)
+    {
+        if (bLockBySelf)
+            conObj.UnLock();
+        return;
+    }
+    if (conObj.GetState() ==1 || conObj.GetState()==2)
+    {
+        conObj.Close();
+    }
+
+    // if conObj.GetNumberOfPostBuffers() == 0 and conObj.GetNumberOfReceivedPacketInQueue() == 0
+    // and the conObj.GetNumberOfReceivedBufferInList() !=0
+    // there may be a situation that the left buffer contain one or more not complete packet,
+    // how we process it?
     if (conObj.GetNumberOfReceivedBufferInList() == 0
         && conObj.GetNumberOfPostBuffers() == 0
         && conObj.GetNumberOfReceivedPacketInQueue() == 0)
     {
-        conObj.Lock();
         conObj.SetState(4);
-        conObj.UnLock();
-
         m_connectionsManager.RemoveUsingConnection(&conObj);
 
         CXConnectionSession * pSession = (CXConnectionSession *)conObj.GetSession();
@@ -194,9 +217,19 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj)
             pSession->Destroy();
             m_sessionsManager.AddFreeSession(pSession);
         }
+        bFreeConnection = true;
+    }
+    if (bLockBySelf)
+        conObj.UnLock();
 
+    if (bFreeConnection)
+    {
+        // if the connection had been add to the free connections queue,and has been used by next socket connectcion.
+        // but some thread are also using this pointer of this connection,
+        // in this case , maybe some error occur.
         m_connectionsManager.AddFreeConnectionObj(&conObj);
     }
+
 }
 
 //have beed locked by CXConnectionObject::lock
@@ -215,7 +248,7 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
     CXSessionsManager & sessionsManager = pComServer->GetSessionsManager();
 
     bool bNeedClose = false;
-   
+
     //PSocketObj  pObj = m_connectionManager.AddPendingConnection(nAcceptSock,(void*)this);
     if (pConObj != NULL && pCache!=NULL)
     {
@@ -277,16 +310,16 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
         {
             ConnectionsManager.AddFreeConnectionObj(pConObj);
         }
-        
+
         return -2;
     }
 
     ConnectionsManager.AddUsingConnection(pConObj);
 
 
-    printf_s( "accept a connection from %s,connection id =%d\n", 
+    printf( "accept a connection from %s,connection id =%I64i\n",
         inet_ntoa(addrRemote.sin_addr), pConObj->GetConnectionIndex());
-    
+
     return RETURN_SUCCEED;
 }
 

@@ -36,7 +36,7 @@ CXEvent::~CXEvent()
     pthread_mutex_destroy(&m_mutexEvent);
     pthread_cond_destroy(&m_condEvent);
 #endif // WIN32
-  
+
 }
 
 void CXEvent::SetEvent()
@@ -48,7 +48,7 @@ void CXEvent::SetEvent()
     pthread_cond_signal(&m_condEvent);
     pthread_mutex_unlock(&m_mutexEvent);
 #endif // WIN32
-    
+
 }
 
 DWORD CXEvent::WaitForSingleObject(DWORD dwMilliseconds)
@@ -62,9 +62,8 @@ DWORD CXEvent::WaitForSingleObject(DWORD dwMilliseconds)
     struct timespec timerWait;
     timerWait.tv_sec = time(NULL) + dwMilliseconds / 1000;
     timerWait.tv_nsec = dwMilliseconds % 1000;
-    int nRet = 0;
     pthread_mutex_lock(&m_mutexEvent);
-    int nRet = pthread_cond_timedwait(&m_condEvent, &m_mutexEvent, &timer);
+    int nRet = pthread_cond_timedwait(&m_condEvent, &m_mutexEvent, &timerWait);
     pthread_mutex_unlock(&m_mutexEvent);
 
     switch (nRet)
@@ -78,12 +77,12 @@ DWORD CXEvent::WaitForSingleObject(DWORD dwMilliseconds)
     case ETIMEDOUT:
         dwRet = WAIT_TIMEOUT;
         break;
-        
+
     default:
         break;
     }
 
 #endif // WIN32
-    
+
     return dwRet;
 }

@@ -21,6 +21,9 @@ a structure will been used to save a user's buffer.
 This class have a spinlock to solve the problem of thread synchronization.
 *****************************************************************************/
 #include "CXMemoryCache.h"
+#ifndef WIN32
+#include <string.h>
+#endif
 
 CXMemoryCache::CXMemoryCache()
 {
@@ -59,7 +62,7 @@ int CXMemoryCache::Initialize(int iObjectSize, int iObjectNumber)
     {
         return 0;
     }
-    
+
     m_iObjectNumInMB = iObjectNumber;
     m_iObjectSize = iObjectSize;
     int nRet = AllocateMemoryBlock();
@@ -67,7 +70,7 @@ int CXMemoryCache::Initialize(int iObjectSize, int iObjectNumber)
     {
         m_bInited = true;
     }
-    
+
     return nRet;
 }
 
@@ -85,14 +88,14 @@ void CXMemoryCache::Destroy()
             it = m_lstBlocks.begin();
             delete[] (byte*)pObj;
         }
-        
+
         m_nMemoryBlocksNumber = 0;
         m_pBlockListHead = NULL;
         m_pBlockListEnd = NULL;
         m_pEmptyObjectListHead = NULL;
         m_pEmptyObjectListEnd = NULL;
     }
-    
+
     m_lock.Unlock();
 }
 
@@ -104,7 +107,7 @@ int  CXMemoryCache::AllocateMemoryBlock()
     int iObjectStructSize = sizeof(cx_cache_obj) + m_iObjectSize;
     int iBufferSize = iObjectStructSize *m_iObjectNumInMB;
     byte *pBuf = NULL;
-    try 
+    try
     {
         pBuf = new byte[iBufferSize];
         if (pBuf == NULL)
@@ -112,7 +115,7 @@ int  CXMemoryCache::AllocateMemoryBlock()
             return -1;
         }
     }
-    catch (const bad_alloc& e) 
+    catch (const bad_alloc& e)
     {
        return -1;
     }
@@ -204,6 +207,6 @@ void CXMemoryCache::FreeObject(void*pObjFree)
         m_pEmptyObjectListHead = m_pEmptyObjectListEnd = pObj;
     }
     m_lock.Unlock();
-   
+
     return ;
 }

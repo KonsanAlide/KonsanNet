@@ -20,6 +20,15 @@ Notice:      The original code of this class was copied from the www network by 
 Email: konsan@126.com
 *****************************************************************************/
 #include "CXSocketImpl.h"
+#ifndef WIN32
+#include <errno.h>
+#include<string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include<sys/ioctl.h>
+#include <unistd.h>
+#include <fcntl.h>
+#endif
 
 namespace CXCommunication
 {
@@ -96,10 +105,10 @@ namespace CXCommunication
         if (m_sock == INVALID_SOCKET)
             return -2;
 
-        
+
         sockaddr_in addr;
         memset(&addr, 0, sizeof(sockaddr_in));
-        int uiAddLen = sizeof(sockaddr_in);
+        socklen_t uiAddLen = sizeof(sockaddr_in);
 
         sock = ::accept(m_sock, reinterpret_cast<struct sockaddr*>(&addr), &uiAddLen);
         if (sock == INVALID_SOCKET)
@@ -112,7 +121,11 @@ namespace CXCommunication
     {
         if (m_sock == INVALID_SOCKET)
             return -2;
-        if (::connect(m_sock, reinterpret_cast<const struct sockaddr *>(&address.GetAddress()),
+        sockaddr_in addr;
+        memset(&addr, 0, sizeof(sockaddr_in));
+        addr = address.GetAddress();
+
+        if (::connect(m_sock, reinterpret_cast<const struct sockaddr *>(&addr),
             sizeof(sockaddr_in)) != 0)
             return -1;
 
@@ -137,7 +150,7 @@ namespace CXCommunication
 
     int CXSocketImpl::RecvBytesFrom(byte* bpBuf, unsigned int iBufLen, sockaddr_in * addr, int iFlag)
     {
-        int addrLen = sizeof(sockaddr_in);
+        socklen_t addrLen = sizeof(sockaddr_in);
         return ::recvfrom(m_sock, reinterpret_cast<char*>(bpBuf), iBufLen, iFlag,
             reinterpret_cast< struct sockaddr *>(&addr), &addrLen);
     }
@@ -179,7 +192,7 @@ namespace CXCommunication
 
     int CXSocketImpl::GetLocalAddress(CXSocketAddress& localAddr)
     {
-        int addrLen = sizeof(struct sockaddr_in);
+        socklen_t addrLen = sizeof(struct sockaddr_in);
         sockaddr_in addr;
         memset(&addr, 0, sizeof(sockaddr_in));
 
@@ -194,7 +207,7 @@ namespace CXCommunication
 
     int CXSocketImpl::GetRemoteAddress(CXSocketAddress& remoteAddr)
     {
-        int addrLen = sizeof(struct sockaddr_in);
+        socklen_t addrLen = sizeof(struct sockaddr_in);
         sockaddr_in addr;
         memset(&addr, 0, sizeof(sockaddr_in));
         int iRet = ::getpeername(m_sock, reinterpret_cast<struct sockaddr*>(&addr), &addrLen);
@@ -205,12 +218,12 @@ namespace CXCommunication
 
         return iRet != 0 ? -1 : 0;
     }
-    
+
     int CXSocketImpl::GetAvailableReadDataLen(int& iDataLen)
     {
         return Ioctl(FIONREAD, iDataLen);
     }
-    
+
 
     int CXSocketImpl::SetOption(int level, int option, int value)
     {
@@ -251,7 +264,8 @@ namespace CXCommunication
 
     int CXSocketImpl::GetRawOption(int level, int option, void* value, int length)
     {
-        int rc = ::getsockopt(m_sock, level, option, reinterpret_cast<char*>(value), &length);
+        socklen_t valueLen = length;
+        int rc = ::getsockopt(m_sock, level, option, reinterpret_cast<char*>(value), &valueLen);
 
         return rc == -1 ? -1 : 0;
     }
@@ -337,7 +351,7 @@ namespace CXCommunication
         opts = fcntl(m_sock, F_GETFL);
         if (opts < 0)
             return -1;
-        if (flag)
+        if (bBlocking)
             opts = opts | O_NONBLOCK;
         else
             opts = opts & (~O_NONBLOCK);
@@ -358,7 +372,7 @@ namespace CXCommunication
     {
         return m_sock;
     }
-    
+
     int CXSocketImpl::Ioctl(int request, int& arg)
     {
         int rc;
@@ -382,7 +396,7 @@ namespace CXCommunication
 
         return (iRet != 0) ? -1 : 0;
     }
-    
+
 
     int CXSocketImpl::GetSocketErrorCode()
     {
@@ -395,8 +409,8 @@ namespace CXCommunication
 
     string CXSocketImpl::GetSocketErrorDescription()
     {
-        
-        
+
+
 #ifdef WIN32
         DWORD dwErrorCode = GetLastError();
         char szErrMsg[1024] = {0};
@@ -409,14 +423,14 @@ namespace CXCommunication
             FORMAT_MESSAGE_IGNORE_INSERTS,
             NULL,
             dwErrorCode,
-            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language  
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
             (LPTSTR)&lpMsgBuf,
             0,
             NULL
         );
         if (dwLen == 0)
         {
-            DWORD dwFmtErrCode = GetLastError(); //FormatMessage 引起的错误代码  
+            DWORD dwFmtErrCode = GetLastError(); //FormatMessage 引起的错误代码
             printf_s(szErrMsg, "FormatMessage failed with %u\n", dwFmtErrCode);
         }
 
@@ -429,7 +443,7 @@ namespace CXCommunication
 
         if (lpMsgBuf)
         {
-            // Free the buffer.  
+            // Free the buffer.
             LocalFree(lpMsgBuf);
             lpMsgBuf = NULL;
         }
@@ -442,7 +456,7 @@ namespace CXCommunication
             strDesc = strerror(errno);
         return strDesc;
 #endif
-        
+
     }
     /*
     int CXSocketImpl::SetSendTimeOut(int timeout)
@@ -462,7 +476,7 @@ namespace CXCommunication
         tv.tv_sec = m_SndTimeOut / 1000;
         tv.tv_usec = m_SndTimeOut % 1000 * 1000;
         return m_sock->SetRawOption(SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(struct timeval));
-#endif  
+#endif
     }
 
     int CXSocketImpl::SetRecvTimeOut(int timeout)
