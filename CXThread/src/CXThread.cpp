@@ -16,6 +16,10 @@ limitations under the License.
 Description：
 *****************************************************************************/
 #include "CXThread.h"
+#ifndef WIN32
+#include <string.h>
+#include <pthread.h>
+#endif
 
 CXThread::CXThread()
 {
@@ -45,7 +49,7 @@ CXThread::~CXThread()
 #else
         pthread_attr_destroy(&m_ThreadAttr);
 #endif
-        
+
     }
 
     m_hThread = NULL;
@@ -68,7 +72,7 @@ int CXThread::Start(RunFun funThread, void *pThreadPara)
     //pthread_attr_setstacksize( &pCurThread->threadAttr, 5*1024 );
     //pthread_attr_setdetachstate (&pCurThread->threadAttr, PTHREAD_CREATE_DETACHED);
     pthread_attr_init(&m_ThreadAttr);
-    iRet = pthread_create(&m_hThread, m_ThreadAttr, ThreadFunction, this);
+    iRet = pthread_create(&m_hThread, &m_ThreadAttr, ThreadFunction, this);
     if (0 == iRet)
     {
         iRet = 0;
@@ -85,7 +89,7 @@ int CXThread::Start(RunFun funThread, void *pThreadPara)
     return iRet;
 }
 
-//stop the thread 
+//stop the thread
 void  CXThread::Stop()
 {
 #ifdef WIN32
@@ -109,7 +113,7 @@ DWORD CXThread::Wait()
     {
         CloseHandle(m_hThread);
     }
-    
+
 #else
     pthread_join(m_hThread, NULL);
 #endif // WIN32
@@ -121,7 +125,7 @@ DWORD CXThread::Wait()
 #ifdef WIN32
 unsigned __stdcall CXThread::ThreadFunction(void* arg)
 #else
-void* base_thread::ThreadFunction(void* arg)
+void* CXThread::ThreadFunction(void* arg)
 #endif
 {
 #ifdef WIN32
@@ -131,7 +135,7 @@ void* base_thread::ThreadFunction(void* arg)
     //异步取消， 线程接到取消信号后，立即退出
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 #endif //WIN32
-    
+
     void *pRet = NULL;
     CXThread *pThis = (CXThread*)arg;
     pThis->m_bRunning = true;
@@ -141,5 +145,11 @@ void* base_thread::ThreadFunction(void* arg)
     }
     pThis->m_bRunning = false;
     pThis->m_hThread = NULL;
+
+#ifdef WIN32
     return (unsigned int)pRet;
+#else
+    return pRet;
+#endif //WIN32
+
 }

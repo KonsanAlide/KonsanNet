@@ -61,11 +61,13 @@ int  CXMessageProcessLevelBase::Run()
 int CXMessageProcessLevelBase::ProcessMessage()
 {
     int iRet = 0;
+    int iLoopNum = 0;
     CXMessageQueue * pQueue = GetMessageQueue();
     while (IsStart())
     {
-        if (pQueue->Wait(1000) == WAIT_OBJECT_0)
+        if (pQueue->Wait(100) == WAIT_OBJECT_0)
         {
+            iLoopNum = 0;
             PCXBufferObj pMes = (PCXBufferObj)pQueue->GetMessage();
             while (pMes != NULL)
             {
@@ -165,7 +167,15 @@ int CXMessageProcessLevelBase::ProcessMessage()
                 pCon->UnLock();
 
                 pMes = (PCXBufferObj)pQueue->GetMessage();
-
+                /*
+                while (pMes==NULL && iLoopNum<1000)
+                {
+                    pMes = (PCXBufferObj)pQueue->GetMessage();
+                    iLoopNum++;
+                }
+                if(pMes)
+                    iLoopNum = 0;
+                    */
             }
         }
     }

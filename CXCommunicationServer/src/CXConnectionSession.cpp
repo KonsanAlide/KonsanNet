@@ -25,7 +25,9 @@ namespace CXCommunication
     {
         m_pMmainConnetion = NULL;
         m_strSessionGuid="";
-        m_strTemporaryVerificationCode = "";
+        m_strVerificationCode = "";
+        m_tmBeginOfVerification=0;
+        m_iTimeOutSecondsOfVerification=0;
     }
 
     CXConnectionSession::~CXConnectionSession()
@@ -98,6 +100,17 @@ namespace CXCommunication
                     return RETURN_SUCCEED;
                 }
             }
+
+            it = m_lstObjectConnections.begin();
+            for (; it != m_lstObjectConnections.end(); it++)
+            {
+                if (*it == &conObj)
+                {
+                    m_lstObjectConnections.erase(it);
+                    UnLock();
+                    return RETURN_SUCCEED;
+                }
+            }
         }
 
 
@@ -109,7 +122,7 @@ namespace CXCommunication
     {
         m_pMmainConnetion = NULL;
         m_strSessionGuid = "";
-        m_strTemporaryVerificationCode = "";
+        m_strVerificationCode = "";
     }
 
     void  CXConnectionSession::SetData(string strKey, void *pData)
@@ -150,5 +163,40 @@ namespace CXCommunication
 
         UnLock();
         return iNumber;
+    }
+
+    void CXConnectionSession::ResetVerificationInfo()
+    {
+        srand(time(NULL));
+        int iCode = rand() % 10000000;
+        char szTemp[20] = {0};
+        sprintf(szTemp,"%08d", iCode);
+        m_strVerificationCode = szTemp;
+
+        m_tmBeginOfVerification = time(NULL);
+
+        // the default time out is 10 seconds
+        m_iTimeOutSecondsOfVerification =10;
+    }
+
+    //verify the verification code
+    //==0 succeed
+    //==-1 the verification code not match
+    //==-2 the verification code is time out
+    int CXConnectionSession::VerifyCode(string strCode)
+    {
+        int iRet = RETURN_SUCCEED;
+        if (strCode.compare(m_strVerificationCode) != 0)
+        {
+            return -1;
+        }
+
+        time_t tmCur = time(NULL);
+        if (tmCur - m_tmBeginOfVerification > m_iTimeOutSecondsOfVerification)
+        {
+            return -2;
+        }
+
+        return iRet;
     }
 }

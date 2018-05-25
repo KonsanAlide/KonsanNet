@@ -95,8 +95,8 @@ CXConnectionSession * CXSessionsManager::FindUsingSession(string strSessionGuid)
     it = m_mapUsingSessions.find(strSessionGuid);
     if (it != m_mapUsingSessions.end())
     {
-        return (CXConnectionSession*)(it->second);
         m_lockUsingSessions.Unlock();
+        return (CXConnectionSession*)(it->second);
     }
     else
     {

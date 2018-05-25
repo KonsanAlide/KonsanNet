@@ -44,6 +44,7 @@ CXSocketServerKernel::CXSocketServerKernel()
     m_nListeningPort=4355;
     m_sockListen = 0;
     m_epollHandle = 0;
+    m_uiConnectionNumber = 0;
 }
 
 CXSocketServerKernel::~CXSocketServerKernel()
@@ -182,7 +183,7 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
         m_lstWaitThreads.push_back(pWaitThread);
     }
 
-    iRet = listen(m_sockListen, 100);
+    iRet = listen(m_sockListen, SOMAXCONN);
     if (iRet == -1)
     {
         cout << "Failed to listen the socket, error : "<< strerror(errno) << endl;
@@ -330,6 +331,7 @@ int CXSocketServerKernel::ListenThread()
         }
         else
         {
+            m_uiConnectionNumber++;
 #ifndef WIN32
             SetNonblocking(sockAccept);
 #endif
@@ -377,7 +379,7 @@ int  CXSocketServerKernel::WaitThread()
 
 #ifdef WIN32
         bGetStauts = GetQueuedCompletionStatus(m_iocpHandle, &dwNumberOfBytes,
-            (LPDWORD)&pConObj,&lpOverlapped, INFINITE);
+            (PULONG_PTR)&pConObj,&lpOverlapped, INFINITE);
 
         if (dwNumberOfBytes == 0xFFFFFFFF)// get the notification from the stop function
         {
@@ -418,7 +420,7 @@ int  CXSocketServerKernel::WaitThread()
 #else
         int nfds = epoll_wait(m_epollHandle, events, 20, -1);
 
-        cout << "\nepoll_wait returns" << endl;
+        //cout << "\nepoll_wait returns" << endl;
 
         for(int i=0;i<nfds;++i)
         {
@@ -428,7 +430,7 @@ int  CXSocketServerKernel::WaitThread()
             }
             else if(events[i].events & EPOLLIN)//receive data 。
             {
-                cout << "A Data Packet received" << endl;
+                //cout << "A Data Packet received" << endl;
                 pConObj = (CXConnectionObject*)(events[i].data.ptr);
                 int iProcessRet = ProcessEpollEvent(*pConObj);
 
@@ -506,15 +508,9 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
     //    dwTransDataOfBytes, (DWORD)pBufObj, pBufObj->nOperate, pBufObj->nSequenceNum);
     //g_cxLog.Log(CXLog::CXLOG_INFO, szInfo);
     //printf_s(szInfo);
-    /*
-    if (pBufObj->nOperate != 2)
-    {
-        int k = 0;
-    }
-    conObj.PostRecv(4096);
-    conObj.FreeBuffer(pBufObj);
-    return TRUE;
-    */
+    
+    
+    
     if (pBufObj->nOperate == OP_READ)
     {
         pBufObj->wsaBuf.len = dwTransDataOfBytes;
@@ -574,8 +570,10 @@ int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
         }
         //need to unlock
 
-        if (nRet == 0)
+        if (nRet == -3) // socket had been closed by peer
         {
+            if (pBufObj)
+                conObj.FreeBuffer(pBufObj);
             if (m_pfOnClose != NULL)
             {
                 m_pfOnClose(conObj);
@@ -587,10 +585,14 @@ int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
         }
         else if (nRet == -1)//read to end
         {
+            if (pBufObj && dwReadLen==0)
+                conObj.FreeBuffer(pBufObj);
             break;
         }
         else if (nRet == -2) //some error or connection had been closed
         {
+            if (pBufObj)
+                conObj.FreeBuffer(pBufObj);
             if (m_pfOnClose != NULL)
             {
                 m_pfOnClose(conObj);
@@ -657,7 +659,7 @@ BOOL CXSocketServerKernel::PostAccept(PCXBufferObj pBufObj)
 int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
 {
 #ifdef WIN32
-    HANDLE hRet = ::CreateIoCompletionPort((HANDLE)conObj.GetSocket(), m_iocpHandle, (DWORD)&conObj, 0);
+    HANDLE hRet = ::CreateIoCompletionPort((HANDLE)conObj.GetSocket(), m_iocpHandle, (ULONG_PTR)&conObj, 0);
     if (hRet == NULL)
     {
         closesocket(conObj.GetSocket());
@@ -667,7 +669,7 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
     //printf_s("BindConnetionToModel,sock=%d\n", conObj.GetSocket());
 
 #else
-    printf("BindConnetionToModel linux\n");
+    //sprintf("BindConnetionToModel linux\n");
     //register ev
     struct epoll_event ev;
     //ev.events=EPOLLIN |EPOLLOUT | EPOLLET;

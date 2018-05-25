@@ -14,7 +14,7 @@ aux_source_directory(src DIR_SRCS)
 
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    LINK_DIRECTORIES(../../lib/Release)
+    LINK_DIRECTORIES(../../lib/debug)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     LINK_DIRECTORIES(../../lib)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
@@ -27,7 +27,6 @@ ADD_LIBRARY(CXMemoryCache_static STATIC ${DIR_SRCS})
 SET(LIBRARY_OUTPUT_PATH ../../lib)
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    LINK_DIRECTORIES(../../lib/debug)
     TARGET_LINK_LIBRARIES(CXMemoryCache CXLock_static.lib)
     TARGET_LINK_LIBRARIES(CXMemoryCache_static CXLock_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")

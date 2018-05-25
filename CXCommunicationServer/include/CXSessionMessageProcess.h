@@ -1,5 +1,6 @@
 #pragma once
 #include "CXSessionLevelBase.h"
+
 namespace CXCommunication
 {
     class CXSessionMessageProcess :public CXSessionLevelBase
@@ -14,6 +15,7 @@ namespace CXCommunication
 
         virtual int SendCommonMessageReply(CXConnectionObject * pCon,
             DWORD deMessageCode, PCXBufferObj pBuf);
+
     };
 }
 

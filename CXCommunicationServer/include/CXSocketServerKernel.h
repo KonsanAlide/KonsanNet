@@ -32,6 +32,7 @@ namespace CXCommunication
     private:
             unsigned short m_nListeningPort;
             int    m_iWaitThreadNum;
+            uint64 m_uiConnectionNumber;
 
             cxsocket m_sockListen;
             int    m_epollHandle;
@@ -79,6 +80,8 @@ namespace CXCommunication
 
             int  AttachConnetionToModel(CXConnectionObject &conObj);
             int  DetachConnetionToModel(CXConnectionObject &conObj);
+
+            uint64 GetConnectionsNumber() { return m_uiConnectionNumber; }
 
     public:
             BOOL PostAccept(PCXBufferObj pBufObj);

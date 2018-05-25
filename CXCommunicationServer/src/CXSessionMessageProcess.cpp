@@ -69,24 +69,69 @@ int CXSessionMessageProcess::SessionLogin(PCXBufferObj pBuf, CXConnectionSession
                 strUserName = pPacket->szUserData;
                 strPassword = pPos + 1;
 
-                pSession = pManager->GetFreeSession();
-                pSession->AddMainConnection(*pCon);
                 string strGuid = pManager->BuildSessionGuid();
+
+                //failed to allocate the session from the session manager
+                pSession = pManager->GetFreeSession();
+                if (pSession == NULL)
+                {
+                    iRet = -7;
+                    pReply->dwReplyCode = 207;
+                    break;
+                }
+
+                pSession->AddMainConnection(*pCon);
                 pSession->SetSesssionGuid(strGuid);
+                pSession->ResetVerificationInfo();
+                pManager->AddUsingSession(pSession);
+
                 *ppSession = pSession;
+
                 pCon->SetSession(pSession);
+
+                string strCode = pSession->GetVerificationCode();
                 strcpy(pReply->szData, strGuid.c_str());
-                pReply->dwDataLen  =strGuid.length() + 1;
+                strcat(pReply->szData, "\r");
+                strcat(pReply->szData, strCode.c_str());
+                pReply->dwDataLen  =strlen(pReply->szData) + 1;
+                
             }
             else
             {
                 pPacket->szUserData[pPacket->dwUserDataLen] = '\0';
-                string strSessionGuid = pPacket->szUserData;
+
+                string strSessionGuid = "";
+                string strVerifyCode = "";
+                pPacket->szUserData[pPacket->dwUserDataLen] = '\0';
+                char* pPos = strchr(pPacket->szUserData, '\r');
+
+                if (pPos == NULL || (pPos - pPacket->szUserData)>(pPacket->dwUserDataLen - 1))
+                {
+                    iRet = -5;
+                    pReply->dwReplyCode = 203;
+                    break;
+                }
+
+                *pPos = '\0';
+                strSessionGuid = pPacket->szUserData;
+                strVerifyCode = pPos + 1;
+
                 pSession = pManager->FindUsingSession(strSessionGuid);
                 if (pSession == NULL)
                 {
                     iRet = -2;
                     pReply->dwReplyCode = 204;
+                    break;
+                }
+
+                int iVerifyRet = pSession->VerifyCode(strVerifyCode);
+                if (iVerifyRet !=0)
+                {
+                    iRet = -6;
+                    if(iVerifyRet==-1)
+                        pReply->dwReplyCode = 205;
+                    else
+                        pReply->dwReplyCode = 206;
                     break;
                 }
                 pCon->SetSession(pSession);
@@ -176,4 +221,3 @@ int CXSessionMessageProcess::SendCommonMessageReply(CXConnectionObject * pCon,
     }
     return RETURN_SUCCEED;
 }
-

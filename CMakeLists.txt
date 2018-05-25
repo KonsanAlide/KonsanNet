@@ -6,6 +6,7 @@ project (CXCommunicationFramework)
 set (CXCommunicationFramework_VERSION_MAJOR 1)
 set (CXCommunicationFramework_VERSION_MINOR 0)
 
+SET(CMAKE_BUILD_TYPE "Debug")
 
 
 # Add the source in project root directory

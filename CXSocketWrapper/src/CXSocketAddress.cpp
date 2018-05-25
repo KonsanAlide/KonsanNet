@@ -26,12 +26,14 @@ namespace CXCommunication
 {
 	CXSocketAddress::CXSocketAddress(const char *ip, unsigned short port, bool b64bitAddr)
 	{
+        m_bSet = false;
         if (!b64bitAddr)
         {
             memset(&m_addr, 0, sizeof(sockaddr_in));
             m_addr.sin_family = AF_INET;
             m_addr.sin_addr.s_addr = inet_addr(ip);
             m_addr.sin_port = htons(port);
+            m_bSet = true;
         }
 
         m_b64bitAddr = b64bitAddr;
@@ -39,6 +41,7 @@ namespace CXCommunication
 
 	CXSocketAddress::CXSocketAddress(const sockaddr_in &addr) : m_addr(addr)
 	{
+        m_bSet = true;
 	}
 
     CXSocketAddress::~CXSocketAddress()

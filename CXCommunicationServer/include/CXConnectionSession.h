@@ -58,12 +58,13 @@ namespace CXCommunication
             int AddMainConnection(CXConnectionObject &conObj);
             int AddMessageConnection(CXConnectionObject &conObj);
             int AddDataConnection(CXConnectionObject &conObj);
+            int AddObjectConnection(CXConnectionObject &conObj);
 
             int RemoveConnection(CXConnectionObject &conObj);
             string GetSessionGuid() { return m_strSessionGuid; }
             void   SetSesssionGuid(string strGuid) { m_strSessionGuid= strGuid; }
-            void   SetTemporaryVerificationCode(string strCode) { m_strTemporaryVerificationCode= strCode; }
-            string GetTemporaryVerificationCode() { return m_strTemporaryVerificationCode; }
+            string GetVerificationCode() { return m_strVerificationCode; }
+           
 
             void Destroy();
 
@@ -73,15 +74,26 @@ namespace CXCommunication
 
             int  GetConnectionNumber();
 
+            void ResetVerificationInfo();
+
+            //verify the verification code
+            //==0 succeed
+            //==-1 the verification code not match
+            //==-2 the verification code is time out
+            int    VerifyCode(string strCode);
+
         protected:
         private:
             CXConnectionObject * m_pMmainConnetion;
             list<CXConnectionObject*> m_lstMessageConnections;
             list<CXConnectionObject*> m_lstDataConnections;
+            list<CXConnectionObject*> m_lstObjectConnections;
             CXSpinLock m_lock;
             string m_strSessionGuid;
-            string m_strTemporaryVerificationCode;
+            string m_strVerificationCode;
             unordered_map<string, void*> m_mapData;
+            time_t m_tmBeginOfVerification;
+            int    m_iTimeOutSecondsOfVerification;
 
     };
 }

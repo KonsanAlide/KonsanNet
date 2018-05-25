@@ -35,12 +35,12 @@ typedef struct _CX_SESSION_LOGIN
     //==2 minor messsage connection
     //==3 data connection
     //==4 object connection
-    int      m_iConnectionType;
     byte  byConnectionType;
     byte  byEncryptType;
     byte  byReserve;
     DWORD dwUserDataLen;
-    //username + '\r'+userpassword
+    //if byConnectionType==1: the szUserData is username + '\r'+userpassword
+    //else the szUserData is sessionId + '\r'+verifyCode
     char  szUserData[1];
 }CXSessionLogin, *PCXSessionLogin;
 #endif

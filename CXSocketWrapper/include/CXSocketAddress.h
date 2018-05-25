@@ -38,11 +38,12 @@ namespace CXCommunication
 		sockaddr_in m_addr;
         sockaddr_in6 m_addrV6;
         bool m_b64bitAddr;
+        bool m_bSet;
 
 	public:
         CXSocketAddress(const char *pszIP, unsigned short usPort, bool b64bitAddr = false);
 		CXSocketAddress(const sockaddr_in &addr);
-        CXSocketAddress();
+        CXSocketAddress() { }
 		virtual ~CXSocketAddress();
 
 	public:
@@ -54,6 +55,7 @@ namespace CXCommunication
         inline void SetAddress(const struct sockaddr_in addr)
         {
             m_addr = addr;
+            m_bSet = true;
         }
 
 		inline unsigned short GetPort() const
@@ -62,6 +64,8 @@ namespace CXCommunication
 		}
 
         virtual string GetIP()const;
+
+        bool IsHaveAddress() { return m_bSet; }
 	};
 }
 

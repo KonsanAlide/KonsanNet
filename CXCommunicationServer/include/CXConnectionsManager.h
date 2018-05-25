@@ -64,6 +64,7 @@ namespace CXCommunication
             void RemoveUsingConnection(uint64 uiConIndex);
             uint64 GetCurrentConnectionIndex();
             void Destroy();
+            uint64 GetTotalConnectionsNumber();
 
         protected:
         private:

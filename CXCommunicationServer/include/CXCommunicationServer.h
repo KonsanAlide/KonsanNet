@@ -26,6 +26,7 @@ Description£º
 #include "CXDataDispathLevelImpl.h"
 #include "CXMemoryCacheManager.h"
 #include "CXSessionsManager.h"
+#include "CXSpinLock.h"
 
 #include <list>
 using std::list;
@@ -67,6 +68,10 @@ namespace CXCommunication
 
         CXSessionsManager &  GetSessionsManager() { return m_sessionsManager; }
 
+        void   AddReceivedBuffers();
+        uint64 GetTotalReceiveBuffers() { return m_uiTotalReceiveBuffers; }
+        uint64 GetTotalConnectionsNumber() { return m_socketServerKernel.GetConnectionsNumber(); }
+
     public:
             
     protected:
@@ -81,6 +86,8 @@ namespace CXCommunication
         CXDataDispathLevelImpl m_dataDispathManager;
         CXSessionsManager    m_sessionsManager;
         list<void*> m_lstMessageProcess;
+        CXSpinLock m_lock;
+        uint64 m_uiTotalReceiveBuffers;
 
     };
 }

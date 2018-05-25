@@ -27,6 +27,7 @@ extern CXLog g_cxLog;
 CXCommunicationServer::CXCommunicationServer()
 {
     m_bRunning = false;
+    m_uiTotalReceiveBuffers = 0;
 }
 
 CXCommunicationServer::~CXCommunicationServer()
@@ -143,7 +144,14 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
 
     //printf_s("OnRecv1:Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d\n",
     //    dwTransDataOfBytes, (DWORD)pBufObj, pBufObj->nOperate);
+    
     CXCommunicationServer * pComServer = (CXCommunicationServer*)conObj.GetServer();
+    if (pComServer == NULL)
+    {
+        return -1;
+    }
+    pComServer->AddReceivedBuffers();
+
     bool bNeedClose = false;
     int iRet = conObj.PostRecv(BUF_SIZE);
     if (iRet != 0)
@@ -210,13 +218,17 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLo
         m_connectionsManager.RemoveUsingConnection(&conObj);
 
         CXConnectionSession * pSession = (CXConnectionSession *)conObj.GetSession();
-        pSession->RemoveConnection(conObj);
-        if (pSession->GetConnectionNumber() == 0)
+        if (pSession != NULL)
         {
-            m_sessionsManager.RemoveUsingSession(pSession);
-            pSession->Destroy();
-            m_sessionsManager.AddFreeSession(pSession);
+            pSession->RemoveConnection(conObj);
+            if (pSession->GetConnectionNumber() == 0)
+            {
+                m_sessionsManager.RemoveUsingSession(pSession);
+                pSession->Destroy();
+                m_sessionsManager.AddFreeSession(pSession);
+            }
         }
+        
         bFreeConnection = true;
     }
     if (bLockBySelf)
@@ -317,8 +329,8 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
     ConnectionsManager.AddUsingConnection(pConObj);
 
 
-    printf( "accept a connection from %s,connection id =%I64i\n",
-        inet_ntoa(addrRemote.sin_addr), pConObj->GetConnectionIndex());
+    //printf( "accept a connection from %s,connection id =%I64i\n",
+    //    inet_ntoa(addrRemote.sin_addr), pConObj->GetConnectionIndex());
 
     return RETURN_SUCCEED;
 }
@@ -342,4 +354,11 @@ int  CXCommunicationServer::ParsePackets(CXConnectionObject& conObj, PCXBufferOb
     DWORD dwTransDataOfBytes)
 {
     return RETURN_SUCCEED;
+}
+
+void CXCommunicationServer::AddReceivedBuffers()
+{
+    m_lock.Lock();
+    m_uiTotalReceiveBuffers++;
+    m_lock.Unlock();
 }

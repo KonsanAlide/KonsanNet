@@ -201,4 +201,9 @@ namespace CXCommunication
         }
     }
 
+    uint64 CXConnectionsManager::GetTotalConnectionsNumber()
+    {
+        return m_mapUsingConnections.size();
+    }
+
 }

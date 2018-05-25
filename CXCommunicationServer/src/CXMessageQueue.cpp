@@ -31,22 +31,29 @@ void CXMessageQueue::PushMessage(void*pMes)
 {
     m_lock.Lock();
     m_queue.push(pMes);
-    m_event.SetEvent();
+    //if(m_queue.size()==1)
+      m_event.SetEvent();
     m_lock.Unlock();
 }
 
 void* CXMessageQueue::GetMessage()
 {
-    m_lock.Lock();
+    
     if (m_queue.size() > 0)
     {
-        void*pMes = m_queue.front();
-        m_queue.pop();
+        m_lock.Lock();
+        void*pMes = NULL;
+        if (m_queue.size() > 0)
+        {
+            pMes = m_queue.front();
+            m_queue.pop();
+        }
+
         m_lock.Unlock();
         return pMes;
     }
     
-    m_lock.Unlock();
+    
     return NULL;
 }
 

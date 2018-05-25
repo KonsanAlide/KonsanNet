@@ -99,7 +99,7 @@ int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type)
         return -2;
     }
 
-    memset(pData, 0, BUF_SIZE);
+    memset(pData, 0, CLIENT_BUF_SIZE);
 
     PCXFileOpenFile pMes = (PCXFileOpenFile)(pData + sizeof(CXPacketHeader) + sizeof(DWORD));
     pMes->byOpenType = type;
@@ -119,7 +119,7 @@ int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type)
         return -6;
     }
     memset(pData, 0, iPacketLen);
-    iTransRet = m_cxTcpClient.RecvPacket(pData,BUF_SIZE, iTransDataLen);
+    iTransRet = m_cxTcpClient.RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen);
     if (iTransRet != 0)
     {
         m_cxTcpClient.Close();
@@ -282,7 +282,7 @@ int  CXFileTcpClient::Write(const byte* pBuf, int iBufLen, int *piWrittenLen)
     }
 
     memset(pData, 0, iPacketLen);
-    iTransRet = m_cxTcpClient.RecvPacket(pData, BUF_SIZE, iTransDataLen);
+    iTransRet = m_cxTcpClient.RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen);
     if (iTransRet != 0)
     {
         m_cxTcpClient.Close();
@@ -332,7 +332,7 @@ int  CXFileTcpClient::Seek(uint64 pos, SEEKTYPE type)
         return -4;
     }
     memset(pData, 0, iPacketLen);
-    iTransRet = m_cxTcpClient.RecvPacket(pData, BUF_SIZE, iTransDataLen);
+    iTransRet = m_cxTcpClient.RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen);
     if (iTransRet != 0)
     {
         m_cxTcpClient.Close();
@@ -383,7 +383,7 @@ int CXFileTcpClient::Close()
         return -6;
     }
     memset(pData, 0, iPacketLen);
-    iTransRet = m_cxTcpClient.RecvPacket(pData, BUF_SIZE, iTransDataLen);
+    iTransRet = m_cxTcpClient.RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen);
     if (iTransRet != 0)
     {
         m_cxTcpClient.Close();
@@ -439,7 +439,7 @@ int CXFileTcpClient::GetFileLength(uint64 & uiFileLength)
         return -6;
     }
     memset(pData, 0, iPacketLen);
-    iTransRet = m_cxTcpClient.RecvPacket(pData, BUF_SIZE, iTransDataLen);
+    iTransRet = m_cxTcpClient.RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen);
     if (iTransRet != 0)
     {
         m_cxTcpClient.Close();

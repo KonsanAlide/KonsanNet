@@ -33,7 +33,9 @@ namespace CXCommunication
         bool     m_bConnected;
         CXSocketImpl *m_pSocket;
         int      m_iPacketNumber;
-        byte     m_byPacketData[BUF_SIZE];
+        byte *   m_pbyPacketData;
+        int      m_iBufferLen;
+        CXSocketAddress m_addressRemote;
 
     public:
 
@@ -76,6 +78,9 @@ namespace CXCommunication
         virtual void BuildHeader(byte *pData, int iDataLen, DWORD dwMesCode);
 
         virtual int RecvPacket(byte *pData, int iDataLen, int &iReadBytes);
+
+        bool SetBufferSize(int iBufSize);
+        byte *GetBuffer(int &iBufSize);
 
 
     };

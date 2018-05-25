@@ -325,6 +325,7 @@ namespace CXCommunication
             {
                 m_uiNumberOfReceivedPacketInQueue++;
                 m_pfnProcessOnePacket(*this, pBuf);
+                //FreeBuffer(pBuf);
             }
             else
             {
@@ -419,7 +420,8 @@ namespace CXCommunication
 
         m_lock.Unlock();
 
-        FreeBuffer(pBuf);
+        if(pBuf!=NULL)
+            FreeBuffer(pBuf);
 
         if (bAllcateMemoryFails)
         {
@@ -534,7 +536,7 @@ namespace CXCommunication
         }
 #else
         int iRet = SendData(pBufObj->wsaBuf.buf, pBufObj->wsaBuf.len,dwSendLen, 0);
-        if (iRet!=0)
+        if (iRet!=0 && iRet!=-1)
         {
             DWORD dwEr = errno;
 
@@ -637,25 +639,58 @@ namespace CXCommunication
 
     void  CXConnectionObject::AddReceivedBufferNumber()
     {
+#ifdef atomic
         m_uiNumberOfReceivedBufferInList++;
+#else
+        m_lock.Lock();
+        m_uiNumberOfReceivedBufferInList++;
+        m_lock.Unlock();
+#endif
+        
     }
     void  CXConnectionObject::ReduceReceivedBufferNumber()
     {
+#ifdef atomic
         m_uiNumberOfReceivedBufferInList--;
+#else
+        m_lock.Lock();
+        m_uiNumberOfReceivedBufferInList--;
+        m_lock.Unlock();
+#endif
+        
     }
 
     void  CXConnectionObject::AddReceivedPacketNumber()
     {
+#ifdef atomic
         m_uiNumberOfReceivedPacketInQueue++;
+#else
+        m_lock.Lock();
+        m_uiNumberOfReceivedPacketInQueue++;
+        m_lock.Unlock();
+#endif  
     }
+
     void  CXConnectionObject::ReduceReceivedPacketNumber()
     {
+#ifdef atomic
         m_uiNumberOfReceivedPacketInQueue--;
+#else
+        m_lock.Lock();
+        m_uiNumberOfReceivedPacketInQueue--;
+        m_lock.Unlock();
+#endif   
     }
 
     void  CXConnectionObject::ReduceNumberOfPostBuffers()
     {
+#ifdef atomic
         m_uiNumberOfPostBuffers--;
+#else
+        m_lock.Lock();
+        m_uiNumberOfPostBuffers--;
+        m_lock.Unlock();
+#endif
     }
 
     void CXConnectionObject::Close()
@@ -665,10 +700,10 @@ namespace CXCommunication
     }
 
     //have lock by CXConnectionObject::Lock();
-    int  CXConnectionObject::RecvData(PCXBufferObj *ppBufObj,DWORD &dwReadLen)
+    int  CXConnectionObject::RecvData(PCXBufferObj *ppBufObj, DWORD &dwReadLen)
     {
-        int nFlags=0;
-        int nReadLen=0;
+        int nFlags = 0;
+        int nReadLen = 0;
         dwReadLen = 0;
 
         m_lock.Lock();
@@ -695,13 +730,13 @@ namespace CXCommunication
         int nTotalRead = 0;
         bool bReadOk = false;
         int  nLeftBufLen = pBufObj->wsaBuf.len;
-        while(nLeftBufLen>0)
+        while (nLeftBufLen>0)
         {
             // must comfirm the sockCur is nonblocking.
             nRecv = recv(m_sock, pBufObj->wsaBuf.buf + nTotalRead, nLeftBufLen, nFlags);
-            if(nRecv < 0)
+            if (nRecv < 0)
             {
-                if(errno == EAGAIN)//in this case, that is not left any data in the network buffer.
+                if (errno == EAGAIN)//in this case, that is not left any data in the network buffer.
                 {
                     bReadOk = true;
                     nRet = -1;
@@ -710,9 +745,7 @@ namespace CXCommunication
                 else if (errno == ECONNRESET)//receive the RST packet from the peer
                 {
 
-                    Close();
-                    //CloseAndDisable(sockCur, events[i]);
-                    cout << "counterpart send out RST\n";
+                    //Close();
                     nRet = -2;
                     break;
                 }
@@ -722,25 +755,22 @@ namespace CXCommunication
                 }
                 else // other error
                 {
-                    Close();
-                    cout << "unrecovable error\n";
+                    //Close();
                     nRet = -2;
                     break;
                 }
             }
-            else if( nRecv == 0) //the peer had closed the socket normally and had sent the FIN packet.
+            else if (nRecv == 0) //the peer had closed the socket normally and had sent the FIN packet.
             {
-                //CloseAndDisable(sockCur, events[i]);
-                Close();
-                cout << "counterpart has shut off\n";
-                nRet = -2;
+                //Close();
+                nRet = -3;
                 break;
             }
             else// recvNum > 0
             {
                 nTotalRead += nRecv;
-                nLeftBufLen-=nRecv;
-                if ( nLeftBufLen == 0)
+                nLeftBufLen -= nRecv;
+                if (nLeftBufLen == 0)
                 {
                     bReadOk = true;
                     break;
@@ -766,7 +796,7 @@ namespace CXCommunication
         int nTotalWritenLen = 0;
         int nLeftDataLen = nBufLen;
 
-        while(nLeftDataLen>0)
+        while (nLeftDataLen>0)
         {
             // must comfirm the sockCur is nonblocking.
             nWritenLen = send(m_sock, pBuf + nTotalWritenLen, nLeftDataLen, 0);
@@ -778,12 +808,10 @@ namespace CXCommunication
                     nRet = -1;
                     break;
                 }
-                else if(errno == ECONNRESET)//receive the RST packet from the peer
+                else if (errno == ECONNRESET)//receive the RST packet from the peer
                 {
 
-                    //CloseAndDisable(sockCur, events[i]);
-                    Close();
-                    cout << "counterpart send out RST\n";
+                    //Close();
                     nRet = -2;
                     break;
                 }
@@ -801,9 +829,7 @@ namespace CXCommunication
 
             if (nWritenLen == 0)//the peer had closed the socket normally and had sent the FIN packet.
             {
-                //CloseAndDisable(sockCur, events[i]);
-                Close();
-                cout << "counterpart has shut off\n";
+                //Close();
                 nRet = -3;
                 break;
             }
@@ -814,13 +840,14 @@ namespace CXCommunication
             {
                 break;
             }
-            nLeftDataLen-=nWritenLen;
+            nLeftDataLen -= nWritenLen;
         }
 
         dwSendLen = nTotalWritenLen;
 
         return nRet;
     }
+
 
 
 }

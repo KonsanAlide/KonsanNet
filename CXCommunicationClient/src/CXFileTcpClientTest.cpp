@@ -81,12 +81,12 @@ int CXFileTcpClientTest::Test(int iNumber)
         fclose(fileLocal);
         return -3;
     }
-    byte byFileData[BUF_SIZE] = {0};
+    byte byFileData[CLIENT_BUF_SIZE] = {0};
     uint64 uiReadLen = 0;
-    int iReadLenInOnce = BUF_SIZE;
+    int iReadLenInOnce = CLIENT_BUF_SIZE;
     int iHaveReadLen = 0;
     size_t sWriteLen = 0;
-    int iLeftBufLen = BUF_SIZE - (sizeof(CXPacketHeader) + sizeof(DWORD)) - sizeof(CXFileReadReply) + 1;
+    int iLeftBufLen = CLIENT_BUF_SIZE - (sizeof(CXPacketHeader) + sizeof(DWORD)) - sizeof(CXFileReadReply) + 1;
 
     while (uiReadLen<uiFileLen)
     {
@@ -187,13 +187,13 @@ bool CXFileTcpClientTest::CompareFile(string strFile1, string strFile2)
         return false;
     }
 
-    byte byFileData[BUF_SIZE] = { 0 };
-    byte byFileData2[BUF_SIZE] = { 0 };
+    byte byFileData[CLIENT_BUF_SIZE] = { 0 };
+    byte byFileData2[CLIENT_BUF_SIZE] = { 0 };
     uint64 uiReadLen = 0;
-    int iReadLenInOnce = BUF_SIZE;
+    int iReadLenInOnce = CLIENT_BUF_SIZE;
     int iHaveReadLen = 0;
     size_t sWriteLen = 0;
-    int iLeftBufLen = BUF_SIZE;
+    int iLeftBufLen = CLIENT_BUF_SIZE;
 
     bool bRet = true;
 

@@ -34,7 +34,21 @@ namespace CXCommunication
         m_bClosing = false;
         m_pSocket = NULL;
         m_iPacketNumber = 0;
-        memset(m_byPacketData, 0, BUF_SIZE);
+        try
+        {
+            m_pbyPacketData = new byte[CLIENT_BUF_SIZE];
+            memset(m_pbyPacketData, 0, CLIENT_BUF_SIZE);
+            m_iBufferLen = CLIENT_BUF_SIZE;
+        }
+        catch (const bad_alloc& e)
+        {
+            //DWORD dwEr = GetLastError();
+            m_pbyPacketData = NULL;
+            m_iBufferLen = 0;
+        }
+
+        
+        
     }
 
 
@@ -112,10 +126,13 @@ namespace CXCommunication
         if (iRet == 0)
         {
             m_bConnected = true;
+            m_addressRemote.SetAddress(address.GetAddress());
             return RETURN_SUCCEED;
         }
         else
         {
+            Close();
+            //DWORD dwEr = GetLastError();
             return -3;
         }
     }
@@ -243,8 +260,28 @@ namespace CXCommunication
             return -2;
         }
 
+        int iPacketLen = sizeof(CXPacketData)-1+ iWantSendLen;
+        byte *pData = m_pbyPacketData;
+        if (pData == NULL)
+        {
+            return -2;
+        }
 
+        memset(pData, 0, iPacketLen);
+        memcpy(pData+ sizeof(CXPacketData) - 1, bpBuf->buf, iWantSendLen);
 
+        BuildHeader(pData, iPacketLen, 10003);
+
+        int iTransDataLen = 0;
+        int iTransRet = Send(pData, iPacketLen, iTransDataLen);
+        if (iTransRet != iPacketLen)
+        {
+            Close();
+            return -6;
+        }
+        return iTransRet;
+
+        /*
         int iSent = 0;
         unsigned int iOffset = 0;
         DWORD dwCheckSum = 0;
@@ -344,6 +381,7 @@ namespace CXCommunication
         {
             return iOffset;
         }
+        */
     }
 
     int CXTcpClient::Close()
@@ -381,8 +419,7 @@ namespace CXCommunication
     {
         int iPacketBodyLen = iDataLen - sizeof(CXPacketHeader);
         byte *pBodyData = pData+ sizeof(CXPacketHeader);
-        PCXSessionLogin pMes = (PCXSessionLogin)(pData + sizeof(CXPacketHeader) + sizeof(DWORD));
-
+        
         DWORD dwCheckSum = 0;
         for (int i = 0; i<iPacketBodyLen; i++)
         {
@@ -463,13 +500,13 @@ namespace CXCommunication
             return INVALID_PARAMETER;
         }
 
-        byte *pData = m_byPacketData;
+        byte *pData = m_pbyPacketData;
         if (pData == NULL)
         {
             return -2;
         }
 
-        memset(pData, 0, BUF_SIZE);
+        memset(pData, 0, m_iBufferLen);
 
         PCXSessionLogin pMes = (PCXSessionLogin)(pData + sizeof(CXPacketHeader) + sizeof(DWORD));
         pMes->dwSessionType = iSessionType;
@@ -493,7 +530,7 @@ namespace CXCommunication
             return -3;
         }
         memset(pData, 0, iPacketLen);
-        iTransRet = RecvPacket(pData, BUF_SIZE, iTransDataLen);
+        iTransRet = RecvPacket(pData, m_iBufferLen, iTransDataLen);
         if (iTransRet != 0)
         {
             Close();
@@ -510,5 +547,42 @@ namespace CXCommunication
         }
 
         return RETURN_SUCCEED;
+    }
+
+    bool CXTcpClient::SetBufferSize(int iBufSize)
+    {
+        if (iBufSize > 0 && iBufSize == m_iBufferLen)
+        {
+            return true;
+        }
+        
+
+        byte *pData = NULL;
+        try
+        {
+            pData = new byte[iBufSize];
+            if (pData == NULL)
+            {
+                return false;
+            }
+            if (m_pbyPacketData != NULL)
+            {
+                delete[]m_pbyPacketData;
+                m_pbyPacketData = NULL;
+            }
+            m_pbyPacketData = pData;
+            m_iBufferLen = iBufSize;
+            return true;
+        }
+        catch (const bad_alloc& e)
+        {
+            return false;
+        }
+    }
+
+    byte *CXTcpClient::GetBuffer(int &iBufSize)
+    {
+        iBufSize = m_iBufferLen;
+        return m_pbyPacketData;
     }
 }
