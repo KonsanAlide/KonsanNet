@@ -65,16 +65,16 @@ int CXMessageProcessLevelBase::ProcessMessage()
     CXMessageQueue * pQueue = GetMessageQueue();
     while (IsStart())
     {
-        if (pQueue->Wait(100) == WAIT_OBJECT_0)
+        if (pQueue->Wait(1000) == WAIT_OBJECT_0)
         {
             iLoopNum = 0;
             PCXBufferObj pMes = (PCXBufferObj)pQueue->GetMessage();
             while (pMes != NULL)
             {
-                //ProcessPacket(pMes);
                 PCXPacketHeader pTcpHeader = (PCXPacketHeader)pMes->wsaBuf.buf;
                 PCXPacketData pPacket = (PCXPacketData)(pMes->wsaBuf.buf);
                 CXConnectionObject *pCon = (CXConnectionObject*)pMes->pConObj;
+                
                 if (pCon->GetSession() == NULL)
                 {
                     if (pPacket->dwMesCode != CX_SESSION_LOGIN_CODE)

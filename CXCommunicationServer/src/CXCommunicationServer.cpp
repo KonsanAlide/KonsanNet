@@ -54,8 +54,8 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
     m_socketServerKernel.SetOnAcceptCallbackFun(CXCommunicationServer::OnAccept);
     m_socketServerKernel.SetServer((void*)this);
 
-    int iMessageProcessObjInOneQueue =4;
-    int iReadQueueNumber = 2;
+    int iMessageProcessObjInOneQueue =2;
+    int iReadQueueNumber = 4;
     int iRet = m_dataDispathManager.Start(this, iReadQueueNumber);
     if (iRet != RETURN_SUCCEED)
     {
@@ -151,6 +151,7 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
         return -1;
     }
     pComServer->AddReceivedBuffers();
+    
 
     bool bNeedClose = false;
     int iRet = conObj.PostRecv(BUF_SIZE);
@@ -203,6 +204,7 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLo
     }
     if (conObj.GetState() ==1 || conObj.GetState()==2)
     {
+		GetSocketSeverKernel().DetachConnetionToModel(conObj);
         conObj.Close();
     }
 
@@ -276,11 +278,12 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
 
         int iQueueIndex = rand()%DataDispather.GetQueueNumber();
         pConObj->SetDispacherQueueIndex(iQueueIndex);
+        pConObj->SetMemoryCache(pCache);
 
         int iRet = SocketKernel.AttachConnetionToModel(*pConObj);
         if (iRet == 0)
         {
-            pConObj->SetMemoryCache(pCache);
+
 #ifdef WIN32
             //when accept a socket, post some
             for (int i = 0; i<1; i++)

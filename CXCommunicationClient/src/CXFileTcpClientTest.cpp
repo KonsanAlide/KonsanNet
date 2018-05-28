@@ -52,11 +52,11 @@ int CXFileTcpClientTest::Test(int iNumber)
     gettimeofday( &end, NULL );
     printf("end   : %d.%d\n", end.tv_sec, end.tv_usec);
 #endif
-    client.SetRemoteServerInfo("192.168.0.103",4355,"test","123");
-    string strRemoteFilePath = "/home/cheng/test/TeamViewer_Setup_zhcn.exe";
+    //client.SetRemoteServerInfo("192.168.0.108",4355,"test","123");
+    //string strRemoteFilePath = "/home/cheng/test/TeamViewer_Setup_zhcn.exe";
 
-    //client.SetRemoteServerInfo("192.168.0.105",4355,"test","123");
-    //string strRemoteFilePath = "D:/Tool/TeamViewer_Setup_zhcn.exe";
+    client.SetRemoteServerInfo("192.168.0.104",4355,"test","123");
+    string strRemoteFilePath = "D:/Tool/TeamViewer_Setup_zhcn.exe";
     string strLocalFilePath = "D:/DataReceive/TeamViewer_Setup_zhcn.exe";
 
     char szNumber[20] = {0};

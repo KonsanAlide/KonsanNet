@@ -170,9 +170,8 @@ namespace CXCommunication
             // the list end of the cache buffer list for sending data
             PCXBufferObj m_pListSendBufEnd;
 
-            //CXSpinLock m_lock;
-            CXMutexLock m_lock;
-            CXSpinLock  m_lockNumber;
+            CXSpinLock  m_lock;
+            CXSpinLock  m_lockRead;
 
             POnProcessOnePacket m_pfnProcessOnePacket;
 
@@ -192,6 +191,7 @@ namespace CXCommunication
 
             // the number of the buffer by posting to iocp model
             atomic<uint64> m_uiNumberOfPostBuffers;
+            atomic<uint64> m_iProcessPacketNumber;
 #else
             // the number of the received buffers in the receiving buffer list
             uint64 m_uiNumberOfReceivedBufferInList;
@@ -202,10 +202,12 @@ namespace CXCommunication
             // the number of the buffer by posting to iocp model
             uint64 m_uiNumberOfPostBuffers;
 
+            uint64 m_iProcessPacketNumber;
+
 #endif
 
 
-            uint64 m_iProcessPacketNumber;
+
 
             void * m_pSessionsManager;
             void * m_pSession;

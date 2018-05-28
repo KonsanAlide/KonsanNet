@@ -332,6 +332,8 @@ int CXSocketServerKernel::ListenThread()
         else
         {
             m_uiConnectionNumber++;
+            //closesocket(sockAccept);
+            //continue;
 #ifndef WIN32
             SetNonblocking(sockAccept);
 #endif
@@ -508,9 +510,9 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
     //    dwTransDataOfBytes, (DWORD)pBufObj, pBufObj->nOperate, pBufObj->nSequenceNum);
     //g_cxLog.Log(CXLog::CXLOG_INFO, szInfo);
     //printf_s(szInfo);
-    
-    
-    
+
+
+
     if (pBufObj->nOperate == OP_READ)
     {
         pBufObj->wsaBuf.len = dwTransDataOfBytes;
@@ -663,7 +665,7 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
     if (hRet == NULL)
     {
         closesocket(conObj.GetSocket());
-        cout << "Failed to add the new connection socket to the iocp model" << endl;
+        //cout << "Failed to add the new connection socket to the iocp model" << endl;
         return -1;
     }
     //printf_s("BindConnetionToModel,sock=%d\n", conObj.GetSocket());
@@ -679,7 +681,7 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
     if (-1 == epoll_ctl(m_epollHandle, EPOLL_CTL_ADD, conObj.GetSocket(), &ev))
     {
         closesocket(conObj.GetSocket());
-        cout << "Failed to add the new connection socket to the epoll model" << endl;
+        //cout << "Failed to add the new connection socket to the epoll model" << endl;
         return -1;
     }
 #endif // WIN32
@@ -690,14 +692,6 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
 int  CXSocketServerKernel::DetachConnetionToModel(CXConnectionObject &conObj)
 {
 #ifdef WIN32
-    HANDLE hRet = ::CreateIoCompletionPort((HANDLE)conObj.GetSocket(), m_iocpHandle, (DWORD)&conObj, 0);
-    if (hRet == NULL)
-    {
-        closesocket(conObj.GetSocket());
-        cout << "Failed to add the new connection socket to the iocp model" << endl;
-        return -1;
-    }
-    printf_s("BindConnetionToModel,sock=%d\n", conObj.GetSocket());
 
 #else
     //register ev
@@ -708,8 +702,8 @@ int  CXSocketServerKernel::DetachConnetionToModel(CXConnectionObject &conObj)
     ev.data.ptr = (void*)&conObj;
     if (-1 == epoll_ctl(m_epollHandle, EPOLL_CTL_DEL, conObj.GetSocket(), &ev))
     {
-        closesocket(conObj.GetSocket());
-        cout << "Failed to add the new connection socket to the epoll model" << endl;
+        //closesocket(conObj.GetSocket());
+        //cout << "Failed to add the new connection socket to the epoll model" << endl;
         return -1;
     }
 #endif // WIN32

@@ -125,6 +125,7 @@ namespace CXCommunication
         int iRet = m_pSocket->Connect(address);
         if (iRet == 0)
         {
+            m_pSocket->SetNoDelay(true);
             m_bConnected = true;
             m_addressRemote.SetAddress(address.GetAddress());
             return RETURN_SUCCEED;

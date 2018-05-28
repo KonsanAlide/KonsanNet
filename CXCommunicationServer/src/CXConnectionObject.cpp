@@ -174,8 +174,10 @@ namespace CXCommunication
             }
         }
 
+        m_lockRead.Lock();
         m_uiNumberOfReceivedBufferInList++;
         m_uiNumberOfPostBuffers--;
+        m_lockRead.Unlock();
 
 
         //debug
@@ -559,20 +561,19 @@ namespace CXCommunication
         if (iBufSize<=0 || iBufSize>1024*1024)
             return INVALID_PARAMETER;
 
-        m_lock.Lock();
+        
         if (m_nState == 3 || m_nState == 4) //closing or closed
         {
-            m_lock.Unlock();
             return -4;
         }
 
         PCXBufferObj pBufObj = GetBuffer();
         if (pBufObj == NULL)
         {
-            m_lock.Unlock();
             return -2;
         }
 
+        m_lockRead.Lock();
         pBufObj->nSequenceNum = ++m_uiRecvBufferIndex;
         pBufObj->nOperate = OP_READ;
         //printf("*****Post buffer begin,buffer index = %I64i,pBufObj=%x,pBufObj->nOperate=%d\n", pBufObj->nSequenceNum,
@@ -589,28 +590,29 @@ namespace CXCommunication
             if (dwEr != WSA_IO_PENDING)
             {
                 m_uiRecvBufferIndex--;
-                m_lock.Unlock();
+                m_lockRead.Unlock();
                 m_lpCacheObj->FreeObject(pBufObj);
                 return -3;
             }
             else
             {
-                m_uiNumberOfPostBuffers++;
+                //m_uiNumberOfPostBuffers++;
             }
         }
         else
         {
-            if (dwRecv > 0)
-            {
-                int l = 0;
-            }
-            m_uiNumberOfPostBuffers++;
+            //m_uiNumberOfPostBuffers++;
         }
-        //printf("*****Post buffer,buffer index = %I64i,pBufObj=%x,pBufObj->nOperate=%d\n", pBufObj->nSequenceNum,
-        //    pBufObj, pBufObj->nOperate);
-#endif // WIN32
 
-        m_lock.Unlock();
+#ifdef atomic
+        m_uiNumberOfPostBuffers++;
+#else
+        m_uiNumberOfPostBuffers++;
+#endif
+
+#endif // WIN32
+        m_lockRead.Unlock();
+
         return RETURN_SUCCEED;
     }
 
@@ -621,8 +623,7 @@ namespace CXCommunication
         {
             return NULL;
         }
-        //printf("*****Get buffer,pBufObj=%x,Connection ID = %I64i\n",pBufObj, m_uiConnectionIndex);
-
+ 
         pBufObj->pConObj = (void*)this;
         pBufObj->wsaBuf.len = BUF_SIZE;
         pBufObj->wsaBuf.buf = pBufObj->buf;
@@ -631,9 +632,13 @@ namespace CXCommunication
 
     void CXConnectionObject::AddProcessPacketNumber()
     {
-        m_lock.Lock();
+#ifdef atomic
         m_iProcessPacketNumber++;
-        m_lock.Unlock();
+#else
+        m_lockRead.Lock();
+        m_iProcessPacketNumber++;
+        m_lockRead.Unlock();
+#endif
     }
 
 
@@ -642,9 +647,9 @@ namespace CXCommunication
 #ifdef atomic
         m_uiNumberOfReceivedBufferInList++;
 #else
-        m_lock.Lock();
+        m_lockRead.Lock();
         m_uiNumberOfReceivedBufferInList++;
-        m_lock.Unlock();
+        m_lockRead.Unlock();
 #endif
         
     }
@@ -653,9 +658,9 @@ namespace CXCommunication
 #ifdef atomic
         m_uiNumberOfReceivedBufferInList--;
 #else
-        m_lock.Lock();
+        m_lockRead.Lock();
         m_uiNumberOfReceivedBufferInList--;
-        m_lock.Unlock();
+        m_lockRead.Unlock();
 #endif
         
     }
@@ -665,9 +670,9 @@ namespace CXCommunication
 #ifdef atomic
         m_uiNumberOfReceivedPacketInQueue++;
 #else
-        m_lock.Lock();
+        m_lockRead.Lock();
         m_uiNumberOfReceivedPacketInQueue++;
-        m_lock.Unlock();
+        m_lockRead.Unlock();
 #endif  
     }
 
@@ -676,9 +681,9 @@ namespace CXCommunication
 #ifdef atomic
         m_uiNumberOfReceivedPacketInQueue--;
 #else
-        m_lock.Lock();
+        m_lockRead.Lock();
         m_uiNumberOfReceivedPacketInQueue--;
-        m_lock.Unlock();
+        m_lockRead.Unlock();
 #endif   
     }
 
@@ -687,9 +692,9 @@ namespace CXCommunication
 #ifdef atomic
         m_uiNumberOfPostBuffers--;
 #else
-        m_lock.Lock();
+        m_lockRead.Lock();
         m_uiNumberOfPostBuffers--;
-        m_lock.Unlock();
+        m_lockRead.Unlock();
 #endif
     }
 
@@ -706,10 +711,10 @@ namespace CXCommunication
         int nReadLen = 0;
         dwReadLen = 0;
 
-        m_lock.Lock();
+        m_lockRead.Lock();
         if (m_nState == 3 || m_nState == 4) //closing or closed
         {
-            m_lock.Unlock();
+            m_lockRead.Unlock();
             return -4;
         }
 
@@ -779,7 +784,7 @@ namespace CXCommunication
         }
 
         dwReadLen = pBufObj->wsaBuf.len = nTotalRead;
-        m_lock.Unlock();
+        m_lockRead.Unlock();
         return nRet;
     }
 

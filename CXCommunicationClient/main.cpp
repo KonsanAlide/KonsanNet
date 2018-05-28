@@ -24,7 +24,7 @@ CXLog g_cxLog;
 
 int MakePacketBuf(PCXPacketData &ppPacket, int iDataLen)
 {
-    int iPacketLen = iDataLen + sizeof(PCXPacketData)-1;
+    int iPacketLen = iDataLen + sizeof(CXPacketData)-1;
     byte *pData = new byte[iPacketLen];
     if (pData == NULL)
     {
@@ -101,7 +101,7 @@ void TestSession()
 {
     CXClientConnectionSession session;
 
-    CXSocketAddress addr("192.168.0.104", 4355);
+    CXSocketAddress addr("192.168.0.108", 4355);
     session.SetRemoteAddress(addr);
     session.SetUserInfo("test", "123");
 
@@ -113,6 +113,30 @@ void TestSession()
         //iRet = session.OpenChannel(*pDataChanel, CXClientSocketChannel::DATA_CONNECTION); 
 
         //iRet = session.OpenChannel(*pDataChanel, CXClientSocketChannel::DATA_CONNECTION);
+
+        int iPacketLen = 4096;
+        int iDataLen = iPacketLen - sizeof(CXPacketData) + 1;
+        byte *pData = new byte[iPacketLen];
+        if (pData == NULL)
+        {
+            return;
+        }
+
+        memset(pData, 0, iPacketLen);
+
+        PCXPacketData pPacket = (PCXPacketData)pData;
+        pPacket->dwMesCode = 4001;
+        memset(pPacket->buf, '$', iDataLen);
+        pMainChanel->BuildHeader(pData, iPacketLen, 4001);
+        for (int i = 0; i<100000; i++)
+        {
+            int nSent = 0;
+            int nRet = pMainChanel->Send(pData, iPacketLen, nSent);
+            if (nRet <= 0)
+                break;
+            //Sleep(1);
+        }
+        /*
         int iDataLen = 1024;
         PCXPacketData pPacket = NULL;
         MakePacketBuf(pPacket, iDataLen);
@@ -124,7 +148,7 @@ void TestSession()
             if (nRet <= 0)
                 break;
             //Sleep(1);
-        }
+        }*/
     }
     session.Close();
     delete pMainChanel;
@@ -135,9 +159,9 @@ void TestSession()
 void TestConection()
 {
     
-    CXSocketAddress addr("192.168.0.105", 4355);
+    CXSocketAddress addr("192.168.0.108", 4355);
 
-    for (int i=0;i<1;i++)
+    for (int i=0;i<10000;i++)
     {
         /*
         CXClientConnectionSession *pSession = new CXClientConnectionSession();
@@ -160,19 +184,30 @@ void TestConection()
            
         }
         else
-        {
-            int iDataLen = 1024;
-            PCXPacketData pPacket = NULL;
-            MakePacketBuf(pPacket, iDataLen);
-            memset(pPacket->buf, '$', pPacket->header.wDataLen);
+        {/*
+            int iPacketLen = 100;
+            int iDataLen = iPacketLen- sizeof(CXPacketData)+1;
+            byte *pData = new byte[iPacketLen];
+            if (pData == NULL)
+            {
+                return ;
+            }
+
+            memset(pData, 0, iPacketLen);
+
+            PCXPacketData pPacket = (PCXPacketData)pData;
+            pPacket->dwMesCode = 4001;
+            memset(pPacket->buf, '$', iDataLen);
+            pConnect->BuildHeader(pData, iPacketLen, 4001);
             for (int i = 0; i<100000; i++)
             {
                 int nSent = 0;
-                int nRet = pConnect->SendPacket(pPacket, iDataLen, nSent);
+                int nRet = pConnect->Send(pData, iPacketLen, nSent);
                 if (nRet <= 0)
                     break;
                 //Sleep(1);
             }
+            */
         }
         
         pConnect->Close();
@@ -204,7 +239,7 @@ int main()
 
     CXThread workThread[1000];
     int i = 0;
-    for (i = 0;i<100;i++)
+    for (i = 0;i<10;i++)
     {
         workThread[i].Start(ThreadWork,(void*)i);
     }
