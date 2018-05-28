@@ -576,8 +576,6 @@ namespace CXCommunication
         m_lockRead.Lock();
         pBufObj->nSequenceNum = ++m_uiRecvBufferIndex;
         pBufObj->nOperate = OP_READ;
-        //printf("*****Post buffer begin,buffer index = %I64i,pBufObj=%x,pBufObj->nOperate=%d\n", pBufObj->nSequenceNum,
-        //    pBufObj, pBufObj->nOperate);
 
 #ifdef WIN32
         DWORD dwRecv = 0;
@@ -609,10 +607,8 @@ namespace CXCommunication
 #else
         m_uiNumberOfPostBuffers++;
 #endif
-
 #endif // WIN32
         m_lockRead.Unlock();
-
         return RETURN_SUCCEED;
     }
 
@@ -623,7 +619,7 @@ namespace CXCommunication
         {
             return NULL;
         }
- 
+
         pBufObj->pConObj = (void*)this;
         pBufObj->wsaBuf.len = BUF_SIZE;
         pBufObj->wsaBuf.buf = pBufObj->buf;
@@ -711,21 +707,19 @@ namespace CXCommunication
         int nReadLen = 0;
         dwReadLen = 0;
 
-        m_lockRead.Lock();
         if (m_nState == 3 || m_nState == 4) //closing or closed
         {
-            m_lockRead.Unlock();
             return -4;
         }
 
         PCXBufferObj pBufObj = GetBuffer();
         if (pBufObj == NULL)
         {
-            m_lock.Unlock();
             return -2;
         }
         *ppBufObj = pBufObj;
 
+        m_lockRead.Lock();
         pBufObj->nSequenceNum = ++m_uiRecvBufferIndex;
         pBufObj->nOperate = OP_READ;
 

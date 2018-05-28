@@ -24,8 +24,9 @@ CXMemoryCacheManager::CXMemoryCacheManager(int iCacheNumber, int iMaxMemorySize)
     m_iInitCacheNumber = 1;
     if (iCacheNumber > MAX_CACHE_NUMBER_IN_ONE_KIND)
     {
-        m_iInitCacheNumber = iCacheNumber;
+        iCacheNumber = MAX_CACHE_NUMBER_IN_ONE_KIND;
     }
+    m_iInitCacheNumber = iCacheNumber;
     //m_iMaxUsableMemorySize = 1024 * 1024 * 1792;
     m_iMaxUsableMemorySize = iMaxMemorySize;
 }
@@ -111,10 +112,11 @@ int CXMemoryCacheManager::AddCache(int iObjectSize, int iObjectNumber)
                     if (ppArray[i] != NULL)
                     {
                         ppArray[i]->Destroy();
-                        delete[]ppArray[i];
+                        delete []ppArray[i];
                         ppArray[i] = NULL;
                     }
                 }
+                delete [] ppArray;
                 return -2;
             }
             m_mapCaches[iObjectSize] = ppArray;

@@ -242,6 +242,7 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLo
         // but some thread are also using this pointer of this connection,
         // in this case , maybe some error occur.
         m_connectionsManager.AddFreeConnectionObj(&conObj);
+        //printf("connection close ,connetcion id=%I64i,connetcion=%x,socket =%d\n", conObj.GetConnectionIndex(),&conObj, conObj.GetSocket());
     }
 
 }
@@ -260,8 +261,6 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
     CXMemoryCache *pCache = MemoryCacheManager.GetMemoryCache(sizeof(CXBufferObj));
 
     CXSessionsManager & sessionsManager = pComServer->GetSessionsManager();
-
-    bool bNeedClose = false;
 
     //PSocketObj  pObj = m_connectionManager.AddPendingConnection(nAcceptSock,(void*)this);
     if (pConObj != NULL && pCache!=NULL)
@@ -283,39 +282,32 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
         int iRet = SocketKernel.AttachConnetionToModel(*pConObj);
         if (iRet == 0)
         {
-
+            ConnectionsManager.AddUsingConnection(pConObj);
 #ifdef WIN32
+            bool bNeedClose = false;
             //when accept a socket, post some
             for (int i = 0; i<1; i++)
             {
                 int iRet = pConObj->PostRecv(sizeof(CXBufferObj));
                 if (iRet != RETURN_SUCCEED)
                 {
-                    if (i == 0) // not post any buffer
-                    {
-                        pComServer->CloseConnection(*pConObj);
-                        ConnectionsManager.AddFreeConnectionObj(pConObj);
-                        return -3;
-                    }
-                    else
-                    {
-                        bNeedClose = true;
-                    }
+                    bNeedClose = true;
                     break;
                 }
+            }
+            if (bNeedClose)
+            {
+                pComServer->CloseConnection(*pConObj);
             }
 #endif
         }
         else
         {
-            pComServer->CloseConnection(*pConObj);
+            pConObj->Close();
+            pConObj->SetState(4);
+            //pComServer->CloseConnection(*pConObj);
             ConnectionsManager.AddFreeConnectionObj(pConObj);
             return -4;
-        }
-
-        if (bNeedClose)
-        {
-            pComServer->CloseConnection(*pConObj);
         }
     }
     else
@@ -323,13 +315,15 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
         closesocket(sock);
         if (pConObj!=NULL)
         {
+            pConObj->Close();
+            pConObj->SetState(4);
             ConnectionsManager.AddFreeConnectionObj(pConObj);
         }
 
         return -2;
     }
 
-    ConnectionsManager.AddUsingConnection(pConObj);
+    //ConnectionsManager.AddUsingConnection(pConObj);
 
 
     //printf( "accept a connection from %s,connection id =%I64i\n",

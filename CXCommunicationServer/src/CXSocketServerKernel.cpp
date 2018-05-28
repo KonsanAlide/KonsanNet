@@ -480,7 +480,7 @@ BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LP
                 conObj.ReduceNumberOfPostBuffers();
                 conObj.FreeBuffer(pBufObj);
             }
-            conObj.SetState(3);
+            //conObj.SetState(3);
 
             if (m_pfOnClose != NULL)
             {
@@ -664,7 +664,7 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
     HANDLE hRet = ::CreateIoCompletionPort((HANDLE)conObj.GetSocket(), m_iocpHandle, (ULONG_PTR)&conObj, 0);
     if (hRet == NULL)
     {
-        closesocket(conObj.GetSocket());
+        //closesocket(conObj.GetSocket());
         //cout << "Failed to add the new connection socket to the iocp model" << endl;
         return -1;
     }
