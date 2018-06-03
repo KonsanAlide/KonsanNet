@@ -68,16 +68,18 @@ int CXMessageProcessLevelBase::ProcessMessage()
         if (pQueue->Wait(1000) == WAIT_OBJECT_0)
         {
             iLoopNum = 0;
-            PCXBufferObj pMes = (PCXBufferObj)pQueue->GetMessage();
+            PCXMessageData pMes = (PCXMessageData)pQueue->GetMessage();
             while (pMes != NULL)
             {
-                PCXPacketHeader pTcpHeader = (PCXPacketHeader)pMes->wsaBuf.buf;
-                PCXPacketData pPacket = (PCXPacketData)(pMes->wsaBuf.buf);
                 CXConnectionObject *pCon = (CXConnectionObject*)pMes->pConObj;
-                
+                if (pMes != NULL)
+                {
+                    pCon->AddProcessPacketNumber();
+                }
+
                 if (pCon->GetSession() == NULL)
                 {
-                    if (pPacket->dwMesCode != CX_SESSION_LOGIN_CODE)
+                    if (pMes->dwMesCode != CX_SESSION_LOGIN_CODE)
                     {
                         printf("The first packet is not the login packet of the session\n");
                     }
@@ -103,7 +105,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
                 else
                 {
                     CXConnectionSession * pSession = (CXConnectionSession *)pCon->GetSession();
-                    DWORD dwMessageCode = pPacket->dwMesCode;
+                    DWORD dwMessageCode = pMes->dwMesCode;
                     switch (dwMessageCode)
                     {
                     case CX_SESSION_LOGIN_CODE:
@@ -140,7 +142,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
                         {
                             m_pUserMessageProcess = new CXUserMessageProcess();
                         }
-                        iRet = m_pUserMessageProcess->ProcessPacket(pMes, pCon, pSession);
+                        iRet = m_pUserMessageProcess->OnReceivedMessage(pMes, pCon, pSession);
                         if (iRet != RETURN_SUCCEED)
                         {
                             printf("Process message fails\n");
@@ -158,15 +160,17 @@ int CXMessageProcessLevelBase::ProcessMessage()
                 pCon->FreeBuffer(pMes);
 
                 //<Process the closing event of this socket>
-                pCon->Lock();
+                //pCon->Lock();
                 pCon->ReduceReceivedPacketNumber();
-                if (pCon->GetState() == 3)//closing
+                if (pCon->GetState() >= 3)//closing
                 {
-                    ProcessConnectionError(pCon);
+                    //ProcessConnectionError(pCon);
+                    CXCommunicationServer *pServer = (CXCommunicationServer *)pCon->GetServer();
+                    pServer->CloseConnection(*pCon);
                 }
-                pCon->UnLock();
+                //pCon->UnLock();
 
-                pMes = (PCXBufferObj)pQueue->GetMessage();
+                pMes = (PCXMessageData)pQueue->GetMessage();
                 /*
                 while (pMes==NULL && iLoopNum<1000)
                 {
@@ -179,25 +183,6 @@ int CXMessageProcessLevelBase::ProcessMessage()
             }
         }
     }
-    return RETURN_SUCCEED;
-}
-
-int  CXMessageProcessLevelBase::ProcessSessionPacket(PCXBufferObj pBuf)
-{
-    return RETURN_SUCCEED;
-}
-
-int  CXMessageProcessLevelBase::ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * pCon,
-    void *pSession)
-{
-    CXConnectionSession * pCurSession = (CXConnectionSession *)pSession;
-    pCon->AddProcessPacketNumber();
-    pCon->ReduceReceivedPacketNumber();
-
-    //CXSessionsManager *pSessionManager = pCon->GetSessionsManager();
-    //printf("####Process packet ,connection id = %I64i,datalen = %d,packet number :%I64i\n",
-    //    pCon->GetConnectionIndex(), pBuf->wsaBuf.len, pCon->GetProcessPacketNumber());
-
     return RETURN_SUCCEED;
 }
 

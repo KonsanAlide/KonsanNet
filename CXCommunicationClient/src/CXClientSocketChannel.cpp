@@ -139,16 +139,17 @@ int CXClientSocketChannel::Login(const string &strUserName, const string &strPas
         return INVALID_PARAMETER;
     }
 
-    int iBufSize = 0;
-    byte *pData = GetBuffer(iBufSize);
+    DWORD dwBufSize = 0;
+    byte byMessageData[CLIENT_BUF_SIZE] = {0};
+    byte *pData = byMessageData;
     if (pData == NULL)
     {
         return -2;
     }
 
-    memset(pData, 0, iBufSize);
+    memset(pData, 0, dwBufSize);
 
-    PCXSessionLogin pMes = (PCXSessionLogin)(pData + sizeof(CXPacketHeader) + sizeof(DWORD));
+    PCXSessionLogin pMes = (PCXSessionLogin)(pData);
     pMes->dwSessionType = iSessionType;
     pMes->byUserType = iUserType;
     pMes->byConnectionType = (byte)m_channelType;
@@ -157,33 +158,35 @@ int CXClientSocketChannel::Login(const string &strUserName, const string &strPas
     pMes->dwUserDataLen = strUserData.length() + 1;
     memcpy(pMes->szUserData, strUserData.c_str(), pMes->dwUserDataLen);
 
-    int iPacketLen = sizeof(CXSessionLogin) - 1 + sizeof(CXPacketData) - 1;
-    iPacketLen += pMes->dwUserDataLen;
-
-    BuildHeader(pData, iPacketLen, CX_SESSION_LOGIN_CODE);
+    int iMesLen = sizeof(CXSessionLogin) - 1 + pMes->dwUserDataLen;
 
     int iTransDataLen = 0;
-    int iTransRet = Send(pData, iPacketLen, iTransDataLen);
-    if (iTransRet != iPacketLen)
+    int iTransRet = SendPacket(pData, iMesLen, CX_SESSION_LOGIN_CODE);
+    if (iTransRet != 0)
     {
         Close();
         return -3;
     }
-    memset(pData, 0, iPacketLen);
-    iTransRet = RecvPacket(pData, iBufSize, iTransDataLen);
+    memset(pData, 0, CLIENT_BUF_SIZE);
+    DWORD dwMesCode = 0;
+    iTransRet = RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen, dwMesCode);
     if (iTransRet != 0)
     {
         Close();
         return -4;
     }
 
-    PCXPacketHeader pTcpHeader = (PCXPacketHeader)pData;
-    PCXPacketData pPacket = (PCXPacketData)(pData);
-    PCXCommonMessageReply pReply = (PCXCommonMessageReply)(pData + sizeof(CXPacketHeader) + sizeof(DWORD));
-    if (pReply->dwReplyCode != 200)
+    if (dwMesCode != CX_SESSION_LOGIN_REPLY_CODE)
     {
         Close();
         return -5;
+    }
+
+    PCXCommonMessageReply pReply = (PCXCommonMessageReply)pData;
+    if (pReply->dwReplyCode != 200)
+    {
+        Close();
+        return -6;
     }
     if (m_channelType == CXCommunication::CXClientSocketChannel::MAJOR_MES_CONNECTION)
     {

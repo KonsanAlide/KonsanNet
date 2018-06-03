@@ -18,7 +18,8 @@ Description£º
 #ifndef __CXFILETCPCLIENT_H__
 #define __CXFILETCPCLIENT_H__
 
-#include "CXTcpClient.h"
+#include "CXClientSocketChannel.h"
+#include "CXClientConnectionSession.h"
 #include "PlatformDataTypeDefine.h"
 #include <string>
 using namespace std;
@@ -56,14 +57,18 @@ namespace CXCommunication
             string strRemoteUser, string strRemotePassword);
         string GetFilePathName() { return m_strRemoteFilePath; }
         int GetFileLength(uint64 & uiFileLength);
+        byte * GetSendBuffer(DWORD &dwBufSize);
+        byte * GetRecvBuffer(DWORD &dwBufSize);
 
     private:
         string m_strRemoteIP;
         unsigned short m_unRemotePort;
         string m_strRemoteFilePath;
-        CXTcpClient m_cxTcpClient;
-        byte  m_byPacketData[BUF_SIZE];
-        CXTcpClient m_cxDataClient;
+        CXClientSocketChannel m_cmmClient;
+        CXClientSocketChannel m_dataClient;
+        CXClientConnectionSession m_cxSession;
+
+        byte  m_byPacketData[CLIENT_BUF_SIZE];
 
         string m_strRemoteUser;
         string m_strRemotePassword;

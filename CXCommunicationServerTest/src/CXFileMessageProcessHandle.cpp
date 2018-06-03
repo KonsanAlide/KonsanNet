@@ -15,7 +15,7 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#include "CXUserMessageProcess.h"
+#include "CXFileMessageProcessHandle.h"
 #include "CXPacketCodeDefine.h"
 #include "CXFilePacketStructure.h"
 #include <time.h>
@@ -34,17 +34,17 @@ Description£º
 
 using namespace CXCommunication;
 
-CXUserMessageProcess::CXUserMessageProcess()
+CXFileMessageProcessHandle::CXFileMessageProcessHandle()
 {
 }
 
 
-CXUserMessageProcess::~CXUserMessageProcess()
+CXFileMessageProcessHandle::~CXFileMessageProcessHandle()
 {
 }
 
 //return value:==-2 need to close the connection
-int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnectionObject* pCon,
+int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXConnectionObject* pCon,
     CXConnectionSession *pSession)
 {
     DWORD dwMessageCode = pMes->dwMesCode;
@@ -70,7 +70,7 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
             }
             bool bHaveFileObject = false;
             pFile = (CXFile64 *)pSession->GetData("file");
-            if (pFile ==NULL)
+            if (pFile == NULL)
             {
                 pFile = new CXFile64();
             }
@@ -82,7 +82,7 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
                 }
                 bHaveFileObject = true;
             }
-            if (!pFile->Open(pData->szFilePath,CXFile64::modeRead))
+            if (!pFile->Open(pData->szFilePath, CXFile64::modeRead))
             {
                 pReply->dwReplyCode = 202;
 
@@ -91,7 +91,7 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
                 pReply->dwDataLen = strlen(pszError) + 1;
                 break;
             }
-            if(!bHaveFileObject)
+            if (!bHaveFileObject)
                 pSession->SetData("file", (void*)pFile);
 
             pReply->dwReplyCode = 200;
@@ -99,8 +99,8 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
         }
 
         dwSendMesLen = sizeof(CXCommonMessageReply);
-        bool bRet = pCon->SendPacket(bySendBuf,dwSendMesLen,CX_FILE_OPEN_REPLY_CODE);
-        if(!bRet)
+        bool bRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_FILE_OPEN_REPLY_CODE);
+        if (!bRet)
         {
             return -2;
         }
@@ -110,15 +110,14 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
         break;
     case CX_FILE_READ_CODE:
     {
-        byte *pBufSend = NULL;
         bool bNotReadFromFle = false;
         PCXFileReadReply pReply = (PCXFileReadReply)bySendBuf;
-        dwSendMesLen = sizeof(CXFileReadReply)-1;
+        dwSendMesLen = sizeof(CXFileReadReply) - 1;
 
         while (true)
         {
             PCXFileRead pData = (PCXFileRead)pMes->buf;
-            if (pData->dwReadLen <= 0 || pData->dwReadLen>(1024*1023))
+            if (pData->dwReadLen <= 0 || pData->dwReadLen>(1024 * 1023))
             {
                 pReply->dwReplyCode = 201;
                 bNotReadFromFle = true;
@@ -135,8 +134,8 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
                 break;
             }
 
-            int iBufLen = pData->dwReadLen + sizeof(CXFileReadReply)-1;
-            pBufSend = (byte*)pCon->GetBuffer(iBufLen);
+            int iBufLen = pData->dwReadLen + sizeof(CXFileReadReply) - 1;
+            byte *pBufSend = (byte*)pCon->GetBuffer(iBufLen);
             if (pBufSend == NULL)
             {
                 pReply->dwReplyCode = 203;
@@ -153,7 +152,7 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
             while (iTotalReadLen<pData->dwReadLen)
             {
                 iNeedRead = pData->dwReadLen;
-                if (iNeedRead > (pData->dwReadLen- iTotalReadLen))
+                if (iNeedRead >(pData->dwReadLen - iTotalReadLen))
                 {
                     iNeedRead = pData->dwReadLen - iTotalReadLen;
                 }
@@ -165,7 +164,7 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
 
                     if (dwReadLen != iNeedRead)//read to file end
                     {
-                        pReply->dwReplyCode = 204; 
+                        pReply->dwReplyCode = 204;
                         break;
                     }
                 }
@@ -179,7 +178,7 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
                 }
             }
 
-            dwSendMesLen = pReply->dwDataLen +sizeof(CXFileReadReply) - 1;
+            dwSendMesLen = pReply->dwDataLen + sizeof(CXFileReadReply) - 1;
             bool bRet = pCon->SendPacket(pBufSend, dwSendMesLen, CX_FILE_READ_REPLY_CODE);
             pCon->FreeBuffer(pBufSend);
             if (!bRet)
@@ -201,7 +200,7 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
 
         break;
     }
-        break;
+    break;
     case CX_FILE_WRITE_CODE:
         break;
     case CX_FILE_CLOSE_CODE:
@@ -277,8 +276,7 @@ int CXUserMessageProcess::OnReceivedMessage(const PCXMessageData pMes, CXConnect
     return RETURN_SUCCEED;
 }
 
-int CXUserMessageProcess::SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen)
+int CXFileMessageProcessHandle::SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen)
 {
     return RETURN_SUCCEED;
 }
-

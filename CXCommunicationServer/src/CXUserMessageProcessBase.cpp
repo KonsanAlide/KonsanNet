@@ -15,17 +15,15 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#include "CXSessionLevelBase.h"
-
+#include "CXUserMessageProcessBase.h"
 
 using namespace CXCommunication;
-CXSessionLevelBase::CXSessionLevelBase()
+CXUserMessageProcessBase::CXUserMessageProcessBase()
 {
 }
 
 
-CXSessionLevelBase::~CXSessionLevelBase()
+CXUserMessageProcessBase::~CXUserMessageProcessBase()
 {
 }
-
 

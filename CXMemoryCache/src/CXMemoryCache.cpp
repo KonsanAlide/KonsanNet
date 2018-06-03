@@ -123,13 +123,14 @@ int  CXMemoryCache::AllocateMemoryBlock()
     memset(pBuf,0, iBufferSize);
     cx_cache_obj * pObjectList = (cx_cache_obj*)pBuf;
     int i = 0;
-    int iMax = m_iObjectNumInMB - 1;
-    while (i++<iMax)
+    while (++i<m_iObjectNumInMB)
     {
+        pObjectList->pThis = this;
         pObjectList->pNext = (cx_cache_obj*)(pBuf + iObjectStructSize *i);
         pObjectList->pData = ((byte*)pObjectList + sizeof(cx_cache_obj));
         pObjectList = pObjectList->pNext;
     }
+    pObjectList->pThis = this;
     pObjectList->pNext = NULL;
     pObjectList->pData = ((byte*)pObjectList + sizeof(cx_cache_obj));
     m_lstBlocks.push_back((cx_cache_obj*)pBuf);
@@ -191,6 +192,9 @@ void CXMemoryCache::FreeObject(void*pObjFree)
     {
         return ;
     }
+
+    if (pObjFree == NULL)
+        return;
 
     cx_cache_obj *pObj = (cx_cache_obj *)((byte*)pObjFree - sizeof(cx_cache_obj));
     pObj->pNext = NULL;

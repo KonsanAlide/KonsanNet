@@ -22,20 +22,21 @@ Description：
 #include "SocketDefine.h"
 #include "CXSpinLock.h"
 #include "CXServerStructDefine.h"
-#include "CXMemoryCache.h"
+//#include "CXMemoryCache.h"
+#include "CXMemoryCacheManager.h"
 #include "CXCommonPacketStructure.h"
 #ifdef WIN32
 #include <atomic>
 #endif
 #include "CXMutexLock.h"
-
-
+#include "CXLog.h"
+#include "CXDataParserImpl.h"
 using namespace std;
 
 namespace CXCommunication
 {
     class CXConnectionObject;
-    typedef int(*POnProcessOnePacket)(CXConnectionObject& conObj, PCXBufferObj pBufObj);
+    typedef int(*POnProcessOnePacket)(CXConnectionObject& conObj,PCXMessageData pMes);
     class CXConnectionObject
     {
         public:
@@ -55,28 +56,32 @@ namespace CXCommunication
             void   SetServer(void* pServer) { m_lpServer = pServer; }
             void*  GetServer() { return m_lpServer; }
 
-            void   SetMemoryCache(CXMemoryCache* pCache) { m_lpCacheObj = pCache; }
-            CXMemoryCache* GetMemoryCache() { return m_lpCacheObj; }
+            void   SetMemoryCache(CXMemoryCacheManager* pCache) { m_lpCacheObj = pCache; }
+            CXMemoryCacheManager* GetMemoryCache() { return m_lpCacheObj; }
 
-            void   SetLargeBlockMemoryCache(CXMemoryCache* pCache) { m_lpLargeBlockCacheObj = pCache; }
-            CXMemoryCache* GetLargeBlockMemoryCache() { return m_lpLargeBlockCacheObj; }
+            void   SetLargeBlockMemoryCache(CXMemoryCacheManager* pCache) { m_lpLargeBlockCacheObj = pCache; }
+            CXMemoryCacheManager* GetLargeBlockMemoryCache() { return m_lpLargeBlockCacheObj; }
 
-            PCXBufferObj GetBuffer();
-            void FreeBuffer(PCXBufferObj pBuf) { m_lpCacheObj->FreeObject(pBuf); }
+            PCXBufferObj GetCXBufferObj(DWORD dwBufSize=sizeof(CXBufferObj));
+            void FreeCXBufferObj(PCXBufferObj pBuf) { m_lpCacheObj->FreeBuffer(pBuf); }
+
+            void* GetBuffer(DWORD dwBufSize) { return m_lpCacheObj->GetBuffer(dwBufSize); }
+            void  FreeBuffer(void* pBuf) { m_lpCacheObj->FreeBuffer(pBuf); }
 
             //
             int    RecvPacket(PCXBufferObj pBufObj,DWORD dwTransDataOfBytes);
 
-            static int  OnProcessOnePacket(CXConnectionObject &conObj, PCXBufferObj pBufObj);
+            bool   VerifyPacketBodyData(PCXPacketHeader pHeader,byte *pData);
+
+            static int  OnProcessOnePacket(CXConnectionObject &conObj, PCXMessageData pMes);
 
             void  SetProcessOnePacketFun(POnProcessOnePacket pfn) { m_pfnProcessOnePacket= pfn; }
 
             int PostSend(byte *pData,int iDataLen);
             int PostSend(PCXBufferObj pBufObj);
-            int PostSendBlocking(PCXBufferObj pBufObj,DWORD &dwSendLen);
+            int PostSendBlocking(PCXBufferObj pBufObj, DWORD &dwSendLen, bool bLockBySelf = true);
 
             int PostRecv(int iBufSize);
-
 
             void SetObjectSizeInCache(int iObjectSize) { m_iObjectSizeInCache = iObjectSize; }
 
@@ -115,6 +120,16 @@ namespace CXCommunication
             int  RecvData(PCXBufferObj *ppBufObj,DWORD &dwReadLen);
             int  SendData(char *pBuf,int nBufLen, DWORD &dwSendLen,int nFlags=0);
 
+            void SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
+            CXLog *GetLogHandle() { return m_pLogHandle; }
+
+            //send a packet to the peer
+            bool  SendPacket(const byte* pbData,DWORD dwLen,DWORD dwMesCode, bool bLockBySelf = true);
+            void  LockSend();
+            void  UnlockSend();
+            
+            void SetDataParserHandle(CXDataParserImpl * handle) { m_pDataParserHandle = handle; }
+            CXDataParserImpl *GetDataParserHandle() { return m_pDataParserHandle; }
 
         protected:
         private:
@@ -129,10 +144,12 @@ namespace CXCommunication
 
             uint64 m_uiConnectionIndex;
 
-#ifdef WIN32
+#ifdef atomic
             atomic<uint64> m_uiRecvBufferIndex;
+            atomic<uint64> m_uiSendBufferIndex;
 #else
             uint64 m_uiRecvBufferIndex;
+            uint64 m_uiSendBufferIndex;
 
 #endif
             uint64 m_uiLastProcessBufferIndex;
@@ -152,8 +169,8 @@ namespace CXCommunication
 
             // class object pointer, communication server
             void* m_lpServer;
-            CXMemoryCache* m_lpCacheObj;
-            CXMemoryCache* m_lpLargeBlockCacheObj;
+            CXMemoryCacheManager* m_lpCacheObj;
+            CXMemoryCacheManager* m_lpLargeBlockCacheObj;
 
             // 使用计数
             int  m_nUsedNumber;
@@ -172,6 +189,7 @@ namespace CXCommunication
 
             CXSpinLock  m_lock;
             CXSpinLock  m_lockRead;
+            CXSpinLock  m_lockSend;
 
             POnProcessOnePacket m_pfnProcessOnePacket;
 
@@ -206,11 +224,11 @@ namespace CXCommunication
 
 #endif
 
-
-
-
             void * m_pSessionsManager;
             void * m_pSession;
+
+            CXLog *m_pLogHandle;
+            CXDataParserImpl *m_pDataParserHandle;
     };
 
 }

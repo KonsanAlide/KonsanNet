@@ -34,21 +34,30 @@ namespace CXCommunication
         m_bClosing = false;
         m_pSocket = NULL;
         m_iPacketNumber = 0;
-        try
-        {
-            m_pbyPacketData = new byte[CLIENT_BUF_SIZE];
-            memset(m_pbyPacketData, 0, CLIENT_BUF_SIZE);
-            m_iBufferLen = CLIENT_BUF_SIZE;
-        }
-        catch (const bad_alloc& e)
-        {
-            //DWORD dwEr = GetLastError();
-            m_pbyPacketData = NULL;
-            m_iBufferLen = 0;
-        }
 
-        
-        
+
+        m_pbySendBuffer = NULL;
+        m_dwSendBufferLen = 0;
+
+        m_pbyRealSendBuffer = NULL;
+        m_dwRealSendBufferLen = 0;
+
+        m_pbyRecvBuffer = NULL;
+        m_dwRecvBufferLen = 0;
+
+        m_pbyParserBuffer = NULL;
+        m_dwParserBufferLen = 0;
+
+        m_pDataParserHandle = NULL;
+
+        SetSendBufferSize(CLIENT_BUF_SIZE);
+        SetRecvBufferSize(CLIENT_BUF_SIZE);
+
+        m_bCompressData = false;
+        m_bEncryptData = false;
+
+        m_dwLeftDataBeginPos = 0;
+        m_dwLeftRecvDataLen = 0; 
     }
 
 
@@ -250,141 +259,6 @@ namespace CXCommunication
         }
     }
 
-    int CXTcpClient::SendPacket(PCXPacketData bpBuf, int iWantSendLen, int &iSentBytes)
-    {
-        if (bpBuf == NULL || iWantSendLen <= 0)
-        {
-            return INVALID_PARAMETER;
-        }
-        if (!IsConnected() || !IsCreated() || IsClosing())
-        {
-            return -2;
-        }
-
-        int iPacketLen = sizeof(CXPacketData)-1+ iWantSendLen;
-        byte *pData = m_pbyPacketData;
-        if (pData == NULL)
-        {
-            return -2;
-        }
-
-        memset(pData, 0, iPacketLen);
-        memcpy(pData+ sizeof(CXPacketData) - 1, bpBuf->buf, iWantSendLen);
-
-        BuildHeader(pData, iPacketLen, 10003);
-
-        int iTransDataLen = 0;
-        int iTransRet = Send(pData, iPacketLen, iTransDataLen);
-        if (iTransRet != iPacketLen)
-        {
-            Close();
-            return -6;
-        }
-        return iTransRet;
-
-        /*
-        int iSent = 0;
-        unsigned int iOffset = 0;
-        DWORD dwCheckSum = 0;
-        for (int i=0;i<iWantSendLen;i++)
-        {
-            dwCheckSum += (unsigned int)bpBuf->buf[i];
-        }
-
-        //send the header
-        CXPacketHeader tcpHeader;
-        memset(&tcpHeader, 0, sizeof(CXPacketHeader));
-        tcpHeader.wDataLen = iWantSendLen;
-        tcpHeader.byReserve = 0x15;
-        tcpHeader.byType = 2;
-        tcpHeader.dwFlag = 0x25f7;
-        tcpHeader.dwCheckSum = dwCheckSum;
-        tcpHeader.dwPacketNum = ++m_iPacketNumber;
-        byte * pData = (byte*)&tcpHeader;//reinterpret_cast<const byte * *>(&addr);
-
-        int iNeedSend = sizeof(CXPacketHeader);
-        bool bSendFailed = false;
-        do
-        {
-            if (IsClosing())
-            {
-                bSendFailed = true;
-                break;
-            }
-
-            iSent = m_pSocket->SendBytes(pData + iOffset, iNeedSend - iOffset);
-
-            if (iSent != SOCKET_ERROR)
-            {
-                if (iSent == 0)
-                {
-                    return 0;
-                }
-                iOffset += iSent;
-            }
-            else
-            {
-                bSendFailed = true;
-                return -3;
-            }
-
-        } while (iOffset < iNeedSend);
-
-
-        iSent = 0;
-        iOffset = 0;
-        bSendFailed = false;
-        pData = bpBuf->buf;
-        do
-        {
-            if (iOffset > 0)
-            {
-                int l = 0;
-            }
-            if (IsClosing())
-            {
-                bSendFailed = true;
-                break;
-            }
-
-            iSent = m_pSocket->SendBytes(pData + iOffset, iWantSendLen - iOffset);
-
-            if (iSent != SOCKET_ERROR)
-            {
-                if (iSent == 0)
-                    break;
-                iOffset += iSent;
-            }
-            else
-            {
-                bSendFailed = true;
-                break;
-            }
-
-        } while (iOffset < iWantSendLen);
-
-        if (iOffset > iWantSendLen)
-        {
-            int l = 0;
-        }
-
-        iSentBytes = iOffset;
-
-        if (bSendFailed)
-        {
-            return -3;
-        }
-        else if (iSent == 0) // read to the end , this socket had been closed
-        {
-            return 0;
-        }
-        else
-        {
-            return iOffset;
-        }
-        */
-    }
-
     int CXTcpClient::Close()
     {
         if (m_pSocket == NULL)
@@ -394,7 +268,7 @@ namespace CXCommunication
         if (IsConnected())
         {
             m_pSocket->SetNoDelay(true);
-            m_pSocket->SetLinger(true,1);
+            m_pSocket->SetLinger(true,0);
             m_bClosing = true;
             m_pSocket->Close();
             //m_pSocket->Shutdown();
@@ -416,34 +290,96 @@ namespace CXCommunication
         return 0;
     }
 
-    void CXTcpClient::BuildHeader(byte *pData, int iDataLen, DWORD dwMesCode)
+    //send a packet to the peer
+    int  CXTcpClient::SendPacket(const byte* pbData, DWORD dwLen, DWORD dwMesCode)
     {
-        int iPacketBodyLen = iDataLen - sizeof(CXPacketHeader);
-        byte *pBodyData = pData+ sizeof(CXPacketHeader);
-        
+        if (pbData==NULL || dwLen > 1024 * 1024)
+        {
+            return INVALID_PARAMETER;
+        }
+
+        byte *pbyBodyData = m_pbyRealSendBuffer+sizeof(CXPacketHeader);
+        DWORD dwPacketLen = dwLen + sizeof(CXPacketData) - 1;
+        DWORD dwOrignDataLen = dwPacketLen;
+
+        if (!SetSendBufferSize(dwPacketLen))
+        {
+            return -2;
+        }
+
+        if (m_pDataParserHandle != NULL)
+        {
+            DWORD dwSrcLen = dwLen+ sizeof(CXPacketBodyData) - 1;
+            DWORD dwDestLen = m_dwRealSendBufferLen- sizeof(CXPacketHeader);
+
+            PCXPacketBodyData pBodyData = (PCXPacketBodyData)m_pbySendBuffer;
+            pBodyData->dwMesCode = dwMesCode;
+            pBodyData->dwPacketNum = ++m_iPacketNumber;
+
+            // not use the socket buffer to save data
+            if (pbData < m_pbySendBuffer || pbData >(m_pbySendBuffer + m_dwSendBufferLen))
+            {
+                if (dwLen>0)
+                {
+                    memcpy(pBodyData->buf, pbData, dwLen);
+                }
+            }
+
+            if (!m_pDataParserHandle->PrepareData(m_bEncryptData, m_bCompressData,
+                (const byte*)pBodyData, dwSrcLen, 
+                pbyBodyData, dwDestLen, dwDestLen))
+            {
+                return -3;
+            }
+            dwPacketLen = dwDestLen + sizeof(CXPacketHeader);
+        }
+        else
+        {
+            PCXPacketBodyData pBodyData = (PCXPacketBodyData)(m_pbyRealSendBuffer + sizeof(CXPacketHeader));
+            pBodyData->dwMesCode = dwMesCode;
+            pBodyData->dwPacketNum = ++m_iPacketNumber;
+
+            // not use the socket buffer to save data
+            if (pbData < m_pbyRealSendBuffer || pbData >(m_pbyRealSendBuffer + m_dwRealSendBufferLen))
+            {
+                if (dwLen>0)
+                {
+                    memcpy(pBodyData->buf, pbData, dwLen);
+                }
+            }
+        }
+
+        int iPacketBodyLen = dwPacketLen - sizeof(CXPacketHeader);
+
         DWORD dwCheckSum = 0;
         for (int i = 0; i<iPacketBodyLen; i++)
         {
-            dwCheckSum += (unsigned int)pBodyData[i];
+            dwCheckSum += (unsigned int)pbyBodyData[i];
         }
 
-        //send the header
-        CXPacketHeader &tcpHeader = *((PCXPacketHeader)pData);
-        memset(&tcpHeader, 0, sizeof(CXPacketHeader));
-        tcpHeader.wDataLen = iPacketBodyLen;
-        tcpHeader.byReserve = 0x15;
-        tcpHeader.byType = 2;
-        tcpHeader.dwFlag = 0x25f7;
-        tcpHeader.dwCheckSum = dwCheckSum;
-        tcpHeader.dwPacketNum = ++m_iPacketNumber;
+        //build the header
+        PCXPacketHeader pTcpHeader = (PCXPacketHeader)m_pbyRealSendBuffer;
+        pTcpHeader->dwDataLen = iPacketBodyLen;
+        pTcpHeader->byReserve = 0x15;
+        pTcpHeader->byType = 2;
+        pTcpHeader->wFlag = 0x25f7;
+        pTcpHeader->dwCheckSum = dwCheckSum;
+        pTcpHeader->dwOrignDataLen = dwOrignDataLen;
+       
 
-        PCXPacketData pPacket = (PCXPacketData)(pData);
-        pPacket->dwMesCode = dwMesCode;
+        int iTransDataLen = 0;
+        int iTransRet = Send(m_pbyRealSendBuffer, dwPacketLen, iTransDataLen);
+        if (iTransRet != dwPacketLen)
+        {
+            Close();
+            return -6;
+        }
+        return 0;
     }
 
-    int CXTcpClient::RecvPacket(byte *pData, int iDataLen,int &iReadBytes)
+    int CXTcpClient::RecvPacket(byte *pData, int iDataLen,int &iReadBytes, DWORD &dwMesCode)
     {
-        if (pData == NULL || iDataLen <= sizeof(CXPacketHeader)+sizeof(CXPacketData))
+        if (pData == NULL || iDataLen < sizeof(CXPacketBodyData)-1)
         {
             return INVALID_PARAMETER;
         }
@@ -452,127 +388,162 @@ namespace CXCommunication
             return -2;
         }
         memset(pData, 0, iDataLen);
+        m_dwLeftDataBeginPos = 0;
+        m_dwLeftRecvDataLen = 0;
 
 
         int iTransRet = 0;
         int iTransLen = 0;
         iReadBytes = 0;
+        CXPacketHeader header;
+        memset(&header, 0, sizeof(CXPacketHeader));
 
         int iNeedSend = sizeof(CXPacketHeader);
 
-        iTransRet = Recv(pData, iNeedSend, iTransLen);
+        iTransRet = Recv((byte*)&header, iNeedSend, iTransLen);
 
         if (iTransRet <=0 )
         {
             return -3;
         }
-        iReadBytes += iTransLen;
 
-        //receive the header
-        PCXPacketHeader pTcpHeader = (PCXPacketHeader)pData;
-
-        iTransRet = 0;
-        iTransLen = 0;
-        iNeedSend = pTcpHeader->wDataLen;
-        iTransRet = Recv(pData+ sizeof(CXPacketHeader), iNeedSend, iTransLen);
-
-        if (iTransRet <= 0)
-        {
-            return -4;
-        }
-        iReadBytes += iTransLen;
-
-        return RETURN_SUCCEED;
-    }
-
-
-    //login to the server by the ip address, user name ,password
-    //Received value: ==RETURN_SUCCEED the socket was created successfully
-    //                ==INVALID_PARAMETER invalid inputed parameters
-    //                ==-2 this socket object had not created
-    //                ==-3 failed to connect the peer
-    int CXTcpClient::Login(const string &strUserName, const string &strPassword,
-        int iUserType, int iSessionType,
-        string strSessionGuid, string strVerifyCode)
-    {
-        int iRet = RETURN_SUCCEED;
-        if (strUserName == "" || strUserName.length()>128 || strPassword == ""|| strPassword.length()>256)
-        {
-            return INVALID_PARAMETER;
-        }
-
-        byte *pData = m_pbyPacketData;
-        if (pData == NULL)
-        {
-            return -2;
-        }
-
-        memset(pData, 0, m_iBufferLen);
-
-        PCXSessionLogin pMes = (PCXSessionLogin)(pData + sizeof(CXPacketHeader) + sizeof(DWORD));
-        pMes->dwSessionType = iSessionType;
-        pMes->byUserType = iUserType;
-        pMes->byConnectionType = 1;
-
-        string strUserData = strUserName + "\r" + strPassword;
-        pMes->dwUserDataLen = strUserData.length()+1;
-        memcpy(pMes->szUserData, strUserData.c_str(), pMes->dwUserDataLen);
-
-        int iPacketLen = sizeof(CXSessionLogin)-1 + sizeof(CXPacketData)-1;
-        iPacketLen += pMes->dwUserDataLen;
-
-        BuildHeader(pData, iPacketLen, CX_SESSION_LOGIN_CODE);
-
-        int iTransDataLen = 0;
-        int iTransRet = Send(pData, iPacketLen, iTransDataLen);
-        if (iTransRet != iPacketLen)
-        {
-            Close();
-            return -3;
-        }
-        memset(pData, 0, iPacketLen);
-        iTransRet = RecvPacket(pData, m_iBufferLen, iTransDataLen);
-        if (iTransRet != 0)
+        if (header.dwDataLen>1024*1024)
         {
             Close();
             return -4;
         }
 
-        PCXPacketHeader pTcpHeader = (PCXPacketHeader)pData;
-        PCXPacketData pPacket = (PCXPacketData)(pData);
-        PCXCommonMessageReply pReply = (PCXCommonMessageReply)(pData + sizeof(CXPacketHeader) + sizeof(DWORD));
-        if (pReply->dwReplyCode != 200)
+        if (header.wFlag != 0x25f7)
         {
             Close();
             return -5;
         }
 
+        if (!SetRecvBufferSize(header.dwDataLen))
+        {
+            return -6;
+        }
+
+        iTransRet = 0;
+        iTransLen = 0;
+        iNeedSend = header.dwDataLen;
+        iTransRet = Recv(m_pbyRecvBuffer, iNeedSend, iTransLen);
+
+        if (iTransRet != iNeedSend)
+        {
+            return -7;
+        }
+
+        if (m_pDataParserHandle != NULL)
+        {
+            DWORD dwDestLen = m_dwParserBufferLen;
+
+            if (!m_pDataParserHandle->ParseData(m_bEncryptData, m_bCompressData,
+                m_pbyRecvBuffer, iTransLen,
+                m_pbyParserBuffer, dwDestLen, dwDestLen))
+            {
+                return -3;
+            }
+            PCXPacketBodyData pBodyData = (PCXPacketBodyData)m_pbyParserBuffer;
+            dwMesCode = pBodyData->dwMesCode;
+            DWORD dwRealDataLen = dwDestLen - (sizeof(CXPacketBodyData) - 1);
+            if (iDataLen < dwRealDataLen) //left some data
+            {
+                memcpy(pData, pBodyData->buf, iDataLen);
+                m_dwLeftRecvDataLen = dwRealDataLen - iDataLen;
+                m_dwLeftDataBeginPos = iDataLen;
+                return -8;
+            }
+            
+            if(dwRealDataLen>0)
+                memcpy(pData, pBodyData->buf, dwRealDataLen);
+            iReadBytes = dwRealDataLen;
+        }
+        else
+        {
+            PCXPacketBodyData pBodyData = (PCXPacketBodyData)m_pbyRecvBuffer;
+            dwMesCode = pBodyData->dwMesCode;
+            DWORD dwRealDataLen = iTransLen - (sizeof(CXPacketBodyData) - 1);
+            if (iDataLen < dwRealDataLen)
+            {
+                memcpy(pData, pBodyData->buf, iDataLen);
+                m_dwLeftRecvDataLen = dwRealDataLen - iDataLen;
+                m_dwLeftDataBeginPos = iDataLen;
+                return -8;
+            }
+
+            if (dwRealDataLen>0)
+                memcpy(pData, pBodyData->buf, dwRealDataLen);
+            iReadBytes = dwRealDataLen;
+            
+        }
+
         return RETURN_SUCCEED;
     }
 
-    bool CXTcpClient::SetBufferSize(int iBufSize)
+    bool CXTcpClient::ReadLeftData(byte *pData, int iDataLen, int &iReadBytes)
     {
-        if (iBufSize > 0 && iBufSize == m_iBufferLen)
+        if (m_dwLeftRecvDataLen == 0)
+            return true;
+
+        iReadBytes = 0;
+        if (iDataLen < m_dwLeftRecvDataLen) //left some data
+        {
+            return false;
+        }
+        else
+        {
+            PCXPacketBodyData pBodyData = (PCXPacketBodyData)m_pbyRecvBuffer;
+            if (m_pDataParserHandle != NULL)
+                pBodyData = (PCXPacketBodyData)m_pbyParserBuffer;
+            memcpy(pData, pBodyData->buf + m_dwLeftDataBeginPos, m_dwLeftRecvDataLen);
+            iReadBytes = m_dwLeftRecvDataLen;
+            return true;
+        }
+    }
+
+
+    bool CXTcpClient::SetSendBufferSize(DWORD dwBufSize)
+    {
+        dwBufSize += sizeof(CXPacketHeader);
+        if (dwBufSize > 0 && dwBufSize <= m_dwSendBufferLen)
         {
             return true;
         }
-        
 
         byte *pData = NULL;
+        byte *pDataReal = NULL;
         try
         {
-            pData = new byte[iBufSize];
+            pData = new byte[dwBufSize];
             if (pData == NULL)
             {
                 return false;
             }
-            if (m_pbyPacketData != NULL)
+            pDataReal = new byte[dwBufSize*2];
+            if (pDataReal == NULL)
             {
-                delete[]m_pbyPacketData;
-                m_pbyPacketData = NULL;
+                delete[]pData;
+                return false;
             }
-            m_pbyPacketData = pData;
-            m_iBufferLen = iBufSize;
+            
+            
+            if (m_pbySendBuffer != NULL)
+            {
+                delete[]m_pbySendBuffer;
+                m_pbySendBuffer = NULL;
+            }
+            m_pbySendBuffer = pData;
+            m_dwSendBufferLen = dwBufSize;
+
+            if (m_pbyRealSendBuffer != NULL)
+            {
+                delete[]m_pbyRealSendBuffer;
+                m_pbyRealSendBuffer = NULL;
+            }
+            m_pbyRealSendBuffer = pDataReal;
+            m_dwRealSendBufferLen = dwBufSize*2;
+
             return true;
         }
         catch (const bad_alloc& e)
@@ -581,9 +552,72 @@ namespace CXCommunication
         }
     }
 
-    byte *CXTcpClient::GetBuffer(int &iBufSize)
+    byte *CXTcpClient::GetSendBuffer(DWORD &dwBufSize)
     {
-        iBufSize = m_iBufferLen;
-        return m_pbyPacketData;
+        dwBufSize = m_dwSendBufferLen- sizeof(CXPacketHeader);
+        return (m_pbySendBuffer+sizeof(CXPacketHeader));
+    }
+
+    bool CXTcpClient::SetRecvBufferSize(DWORD dwBufSize)
+    {
+        dwBufSize+= sizeof(CXPacketHeader);
+        if (dwBufSize > 0 && dwBufSize <= m_dwRecvBufferLen)
+        {
+            return true;
+        }
+
+        byte *pData = NULL;
+        byte *pDataParser = NULL;
+        try
+        {
+            pData = new byte[dwBufSize];
+            if (pData == NULL)
+            {
+                return false;
+            }
+
+            pDataParser = new byte[dwBufSize*10];
+            if (pDataParser == NULL)
+            {
+                delete[]pData;
+                return false;
+            }
+
+            if (m_pbyRecvBuffer != NULL)
+            {
+                delete[]m_pbyRecvBuffer;
+                m_pbyRecvBuffer = NULL;
+            }
+            m_pbyRecvBuffer = pData;
+            m_dwRecvBufferLen = dwBufSize;
+ 
+            if (m_pbyParserBuffer != NULL)
+            {
+                delete[]m_pbyParserBuffer;
+                m_pbyParserBuffer = NULL;
+            }
+
+            m_pbyParserBuffer = pDataParser;
+            m_dwParserBufferLen = dwBufSize * 10;
+
+            return true;
+        }
+        catch (const bad_alloc& e)
+        {
+            return false;
+        }
+    }
+
+    byte *CXTcpClient::GetRecvBuffer(DWORD &dwBufSize)
+    {
+        dwBufSize = m_dwRecvBufferLen - sizeof(CXPacketHeader);
+        return (m_pbyRecvBuffer + sizeof(CXPacketHeader));
+    }
+
+    //get the parse buffer
+    byte * CXTcpClient::GetRealRecvBuffer(DWORD &dwBufSize)
+    {
+        dwBufSize = m_dwParserBufferLen - sizeof(CXPacketHeader);
+        return (m_pbyParserBuffer + sizeof(CXPacketHeader));
     }
 }

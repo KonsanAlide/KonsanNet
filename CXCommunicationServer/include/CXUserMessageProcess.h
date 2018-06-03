@@ -21,23 +21,20 @@ Description£º
 #include "CXConnectionObject.h"
 #include "CXConnectionSession.h"
 #include "CXCommonPacketStructure.h"
-
+#include "CXUserMessageProcessBase.h"
 namespace CXCommunication
 {
-    class CXUserMessageProcess
+    class CXUserMessageProcess : public CXUserMessageProcessBase
     {
     public:
         CXUserMessageProcess();
         ~CXUserMessageProcess();
 
-        virtual int ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * pCon,
+        int OnReceivedMessage(const PCXMessageData pMes, CXConnectionObject * pCon,
             CXConnectionSession *pSession);
 
-        int SendCommonMessageReply(CXConnectionObject * pCon,
-            DWORD deMessageCode, PCXBufferObj pBuf);
+        int SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen);
 
-        int SendFileReadReply(CXConnectionObject * pCon,
-            DWORD deMessageCode, PCXBufferObj pBuf);
     };
 }
 #endif //CXUSERMESSAGEPROCESS_H

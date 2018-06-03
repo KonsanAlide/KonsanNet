@@ -15,17 +15,26 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#include "CXSessionLevelBase.h"
+#ifndef CXUSERMESSAGEPROCESSBASE_H
+#define CXUSERMESSAGEPROCESSBASE_H
 
+#include "CXConnectionObject.h"
+#include "CXConnectionSession.h"
+#include "CXCommonPacketStructure.h"
 
-using namespace CXCommunication;
-CXSessionLevelBase::CXSessionLevelBase()
+namespace CXCommunication
 {
+    class CXUserMessageProcessBase
+    {
+    public:
+        CXUserMessageProcessBase();
+        ~CXUserMessageProcessBase();
+
+        virtual int OnReceivedMessage(const PCXMessageData pMes, CXConnectionObject* pCon,
+            CXConnectionSession *pSession)=0;
+        
+        virtual int SendData(CXConnectionObject * pCon,const byte *pbyData,DWORD dwDataLen)=0;
+    };
 }
-
-
-CXSessionLevelBase::~CXSessionLevelBase()
-{
-}
-
+#endif //CXUSERMESSAGEPROCESSBASE_H
 

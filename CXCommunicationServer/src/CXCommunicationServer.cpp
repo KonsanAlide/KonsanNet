@@ -17,17 +17,20 @@ Description£º
 *****************************************************************************/
 #include "CXCommunicationServer.h"
 #include "CXMessageProcessLevelBase.h"
-#include "CXLog.h"
 #include "PlatformFunctionDefine.h"
 
-
 using namespace CXCommunication;
-extern CXLog g_cxLog;
 
 CXCommunicationServer::CXCommunicationServer()
 {
     m_bRunning = false;
     m_uiTotalReceiveBuffers = 0;
+    m_pDataParserHandle = NULL;
+
+    m_pUserMessageProcessHandle=NULL;
+    m_pSessionMessageProcessHandle = NULL;
+
+    m_pLogHandle = NULL;
 }
 
 CXCommunicationServer::~CXCommunicationServer()
@@ -41,8 +44,15 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
     {
         return INVALID_PARAMETER;
     }
+    if (0 != m_networkInit.InitEnv())
+    {
+        return -7;
+    }
 
-    int nRet = m_memoryCacheManager.Init(sizeof(CXBufferObj), 1000);
+    map<DWORD, DWORD>mapCacheConfig;
+    mapCacheConfig[256] = 1024;
+    mapCacheConfig[4096] = 1024;
+    int nRet = m_memoryCacheManager.Init(mapCacheConfig);
     if (nRet != 0)
     {
         cout << "Failed to start memory cache manager" << endl;
@@ -53,6 +63,7 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
     m_socketServerKernel.SetOnCloseCallbackFun(CXCommunicationServer::OnClose);
     m_socketServerKernel.SetOnAcceptCallbackFun(CXCommunicationServer::OnAccept);
     m_socketServerKernel.SetServer((void*)this);
+    m_socketServerKernel.SetLogHandle(m_pLogHandle);
 
     int iMessageProcessObjInOneQueue =2;
     int iReadQueueNumber = 4;
@@ -73,6 +84,8 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
             {
                 CXMessageProcessLevelBase * pProcessObj = new CXMessageProcessLevelBase();
                 pProcessObj->SetMessageQueue(pQueue);
+                pProcessObj->SetUserMessageProcessHandle(m_pUserMessageProcessHandle);
+                pProcessObj->SetSessionMessageProcessHandle(m_pSessionMessageProcessHandle);
                 iRet = pProcessObj->Run();
                 if (iRet != 0)
                 {
@@ -139,7 +152,7 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
     //char szInfo[1024] = { 0 };
     //sprintf_s(szInfo, 1024, "OnRecv, Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d\n",
     //    dwTransDataOfBytes, (DWORD)pBufObj, pBufObj->nOperate);
-    //g_cxLog.Log(CXLog::CXLOG_INFO, szInfo);
+    //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
     //printf_s(szInfo);
 
     //printf_s("OnRecv1:Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d\n",
@@ -270,6 +283,7 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
         pConObj->SetObjectSizeInCache(sizeof(CXBufferObj));
         pConObj->SetProcessOnePacketFun(CXCommunicationServer::OnProcessOnePacket);
         pConObj->SetSessionsManager(&sessionsManager);
+        pConObj->SetLogHandle(pComServer->GetLogHandle());
 
 
         //char *str = inet_ntoa(sockRemote.sin_addr);
@@ -277,7 +291,7 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
 
         int iQueueIndex = rand()%DataDispather.GetQueueNumber();
         pConObj->SetDispacherQueueIndex(iQueueIndex);
-        pConObj->SetMemoryCache(pCache);
+        pConObj->SetMemoryCache(&MemoryCacheManager);
 
         int iRet = SocketKernel.AttachConnetionToModel(*pConObj);
         if (iRet == 0)
@@ -338,12 +352,17 @@ int  CXCommunicationServer::OnWrite(CXConnectionObject &conObj)
     return RETURN_SUCCEED;
 }
 
-int  CXCommunicationServer::OnProcessOnePacket(CXConnectionObject &conObj, PCXBufferObj pBufObj)
+int  CXCommunicationServer::OnProcessOnePacket(CXConnectionObject &conObj, PCXMessageData pMes)
 {
     CXCommunicationServer * pComServer = (CXCommunicationServer*)conObj.GetServer();
     CXDataDispathLevelImpl & DataDispather = pComServer->GetDataDispathManger();
     CXMessageQueue * pQueue = DataDispather.GetReadMessageQueue(conObj.GetDispacherQueueIndex());
-    pQueue->PushMessage((void*)pBufObj);
+    CXDataParserImpl * pHandle = pComServer->GetDataParserHandle();
+    if (pHandle !=NULL)
+    {
+        //pHandle->ParseData();
+    }
+    pQueue->PushMessage((void*)pMes);
     return RETURN_SUCCEED;
 }
 

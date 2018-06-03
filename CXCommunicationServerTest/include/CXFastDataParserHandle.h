@@ -15,32 +15,34 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#ifndef CXDATAPARSERIMPL_H
-#define CXDATAPARSERIMPL_H
+#ifndef CXFASTDATAPARSERHANDLE_H
+#define CXFASTDATAPARSERHANDLE_H
 #include "PlatformDataTypeDefine.h"
 #ifdef WIN32
 #include<windows.h>
 #endif
+#include "CXDataParserImpl.h"
 namespace CXCommunication
 {
-    class CXDataParserImpl
+    class CXFastDataParserHandle : public CXDataParserImpl
     {
         public:
-            CXDataParserImpl();
-            virtual ~CXDataParserImpl();
+            CXFastDataParserHandle();
+            virtual ~CXFastDataParserHandle();
 
-            virtual bool ParseData(bool bEncrypted,bool bCompressed,
-                const byte *pbSrcBuf,DWORD dwSrcDataLen,
-                byte *pbDestBuf, DWORD dwDestBufLen, 
-                DWORD &dwReadDataLen)=0;
-
-            virtual bool PrepareData(bool bEncrypted, bool bCompressed,
+            bool ParseData(bool bEncrypted, bool bCompressed,
                 const byte *pbSrcBuf, DWORD dwSrcDataLen,
                 byte *pbDestBuf, DWORD dwDestBufLen,
-                DWORD &dwReadDataLen) = 0;
+                DWORD &dwReadDataLen);
+
+            bool PrepareData(bool bEncrypted, bool bCompressed,
+                const byte *pbSrcBuf, DWORD dwSrcDataLen,
+                byte *pbDestBuf, DWORD dwDestBufLen,
+                DWORD &dwReadDataLen);
+
         protected:
         private:
     };
 }
 
-#endif // CXDATAPARSERIMPL_H
+#endif // CXFASTDATAPARSERHANDLE_H

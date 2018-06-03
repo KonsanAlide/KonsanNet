@@ -32,7 +32,7 @@ Description£º
 #include "CXConnectionObject.h"
 #include "CXSessionsManager.h"
 #include "CXSessionMessageProcess.h"
-#include "CXUserMessageProcess.h"
+#include "CXUserMessageProcessBase.h"
 namespace CXCommunication
 {
     class CXMessageProcessLevelBase
@@ -45,17 +45,21 @@ namespace CXCommunication
         int  Run();
         bool IsStart() { return m_bStart; }
         virtual int  ProcessMessage();
-        virtual int  ProcessSessionPacket(PCXBufferObj pBuf);
-        virtual int  ProcessPacket(PCXBufferObj pBuf, CXConnectionObject * pCon,
-            void *pSession);
+
         void Stop();
         virtual int ProcessConnectionError(CXConnectionObject * pCon);
+
+        void SetUserMessageProcessHandle(CXUserMessageProcessBase * handle) { m_pUserMessageProcess = handle; }
+        CXUserMessageProcessBase *GetUserMessageProcessHandle() { return m_pUserMessageProcess; }
+
+        void SetSessionMessageProcessHandle(CXSessionLevelBase * handle) { m_pSessionLevelProcess = handle; }
+        CXSessionLevelBase *GetSessionMessageProcessHandle() { return m_pSessionLevelProcess; }
 
     private:
         CXThread m_threadProcess;
         CXMessageQueue *m_pMessageQueue;
-        CXSessionMessageProcess *m_pSessionLevelProcess;
-        CXUserMessageProcess *m_pUserMessageProcess;
+        CXSessionLevelBase *m_pSessionLevelProcess;
+        CXUserMessageProcessBase *m_pUserMessageProcess;
 
         bool m_bStart;
     };

@@ -26,21 +26,40 @@ Description£ºThe structure of the data packet used in the common comnunication.
 #ifndef _CX_PACKET_HEADER
 typedef struct _CX_PACKET_HEADER
 {
-    WORD  wDataLen;
+    DWORD dwDataLen;
+    DWORD dwCheckSum;
+    WORD  wFlag;
     byte  byType;
     byte  byReserve;
-    DWORD dwCheckSum;
-    DWORD dwFlag;
-    DWORD dwPacketNum;
+    DWORD dwOrignDataLen;
 }CXPacketHeader, *PCXPacketHeader;
+#endif
+
+#ifndef _CX_MESSAGE_DATA
+typedef struct _CX_MESSAGE_DATA
+{
+    DWORD dwType;
+    DWORD dwDataLen;
+    DWORD dwMesCode;
+    void  *pConObj;
+    byte  buf[1];
+}CXMessageData, *PCXMessageData;
+#endif
+
+#ifndef _CX_PACKET_BODY_DATA
+typedef struct _CX_PACKET_BODY_DATA
+{
+    DWORD dwMesCode;
+    DWORD dwPacketNum;
+    byte  buf[1];
+}CXPacketBodyData, *PCXPacketBodyData;
 #endif
 
 #ifndef _CX_PACKET_DATA
 typedef struct _CX_PACKET_DATA
 {
     CXPacketHeader header;
-    DWORD dwMesCode;
-    byte buf[1];
+    CXPacketBodyData bodyData;
 }CXPacketData, *PCXPacketData;
 #endif
 

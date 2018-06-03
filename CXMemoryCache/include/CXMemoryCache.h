@@ -45,18 +45,12 @@ using namespace std;
 
 class CXMemoryCache
 {
+public:
     struct cx_cache_obj
     {
-        //cx_cache_obj *pPrev;
+        CXMemoryCache*pThis;
         cx_cache_obj *pNext;
         byte *pData;
-    };
-
-    struct cx_block_cache_head
-    {
-        //cx_cache_obj *pPrev;
-        cx_block_cache_head *pNext;
-        cx_cache_obj *pCache;
     };
 
 public:
@@ -74,6 +68,8 @@ public:
     void FreeObject(void*pObject);
 
     bool IsHaveObject() { return m_pEmptyObjectListHead!=NULL; }
+
+    int  GetObjectSize() { return m_iObjectSize; }
 
 protected:
     //allocate a new memory block, add to the end of the m_pBlockList

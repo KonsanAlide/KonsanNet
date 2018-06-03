@@ -20,6 +20,7 @@ Description£º
 
 #include "CXSocketImpl.h"
 #include "CXCommonPacketStructure.h"
+#include "CXDataParserImpl.h"
 
 namespace CXCommunication
 {
@@ -33,9 +34,27 @@ namespace CXCommunication
         bool     m_bConnected;
         CXSocketImpl *m_pSocket;
         int      m_iPacketNumber;
-        byte *   m_pbyPacketData;
-        int      m_iBufferLen;
+
+        byte *   m_pbySendBuffer;
+        DWORD    m_dwSendBufferLen;
+
+        byte *   m_pbyRealSendBuffer;
+        DWORD    m_dwRealSendBufferLen;
+
+        byte *   m_pbyRecvBuffer;
+        DWORD    m_dwRecvBufferLen;
+
+        byte *   m_pbyParserBuffer;
+        DWORD    m_dwParserBufferLen;
+        
         CXSocketAddress m_addressRemote;
+        CXDataParserImpl *m_pDataParserHandle;
+
+        bool     m_bCompressData;
+        bool     m_bEncryptData;
+
+        DWORD    m_dwLeftDataBeginPos;
+        DWORD    m_dwLeftRecvDataLen;
 
     public:
 
@@ -63,26 +82,32 @@ namespace CXCommunication
 
         virtual int Recv(byte *bpBuf, int iWantRecvLen, int &iReceivedBytes);
         virtual int Send(const byte *bpBuf, int iWantSendLen, int &iSentBytes);
-        virtual int SendPacket(PCXPacketData bpBuf, int iWantSendLen, int &iSentBytes);
         virtual int Close();
+        //send a packet to the peer
+        virtual int SendPacket(const byte* pbData, DWORD dwLen, DWORD dwMesCode);
 
-        //login to the server by the user name ,password
-        //Received value: ==RETURN_SUCCEED the socket was created successfully 
-        //                ==INVALID_PARAMETER invalid inputed parameters
-        //                ==-2 this socket object had not created
-        //                ==-3 failed to connect the peer 
-        virtual int Login(const string &strUserName, const string &strPassword, 
-            int iUserType=1, int iSessionType=1,
-            string strSessionGuid="",string strVerifyCode="");
+        virtual int RecvPacket(byte *pData, int iDataLen, int &iReadBytes,DWORD &dwMesCode);
 
-        virtual void BuildHeader(byte *pData, int iDataLen, DWORD dwMesCode);
+        virtual bool ReadLeftData(byte *pData, int iDataLen, int &iReadBytes);
 
-        virtual int RecvPacket(byte *pData, int iDataLen, int &iReadBytes);
+        bool   SetSendBufferSize(DWORD dwBufSize);
+        byte * GetSendBuffer(DWORD &dwBufSize);
+        DWORD  GetSendBufferSize() { return m_dwSendBufferLen; }
 
-        bool SetBufferSize(int iBufSize);
-        byte *GetBuffer(int &iBufSize);
+        bool   SetRecvBufferSize(DWORD dwBufSize);
+        byte * GetRecvBuffer(DWORD &dwBufSize);
+        DWORD  GetRecvBufferSize() { return m_dwRecvBufferLen; }
 
+        //get the parse buffer
+        byte * GetRealRecvBuffer(DWORD &dwBufSize);
 
+        void SetDataParserHandle(CXDataParserImpl * handle) { m_pDataParserHandle = handle; }
+        CXDataParserImpl *GetDataParserHandle() { return m_pDataParserHandle; }
+
+        void SetCompressData(bool bSet) { m_bCompressData = bSet; }
+        void SetEncryptData(bool bSet) { m_bEncryptData = bSet; }
+        bool IsCompressData() { return m_bCompressData; }
+        bool IsEncryptData() { return m_bEncryptData; }
     };
 }
 #endif

@@ -30,9 +30,6 @@ Description：
 #include "CXSocketServerKernel.h"
 #include "CXConnectionObject.h"
 
-#include "CXLog.h"
-extern CXLog g_cxLog;
-
 using namespace CXCommunication;
 
 void* ThreadListen(void* lpvoid);
@@ -410,7 +407,7 @@ int  CXSocketServerKernel::WaitThread()
 
             //char szInfo[1024] = {0};
             //sprintf_s(szInfo,1024, "Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x\n", dwNumberOfBytes, (DWORD)pBufObj);
-            //g_cxLog.Log(CXLog::CXLOG_INFO, szInfo);
+            //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
             //printf_s(szInfo);
             if (!ProcessIOCPEvent(*pConObj, pBufObj, dwNumberOfBytes))
             {
@@ -478,7 +475,7 @@ BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LP
             if (pBufObj != NULL)
             {
                 conObj.ReduceNumberOfPostBuffers();
-                conObj.FreeBuffer(pBufObj);
+                conObj.FreeCXBufferObj(pBufObj);
             }
             //conObj.SetState(3);
 
@@ -508,7 +505,7 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
     char szInfo[1024] = { 0 };
     //sprintf_s(szInfo, 1024, "ProcessIOCPEvent:Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d,pBufObj->nSequenceNum=%I64i\n",
     //    dwTransDataOfBytes, (DWORD)pBufObj, pBufObj->nOperate, pBufObj->nSequenceNum);
-    //g_cxLog.Log(CXLog::CXLOG_INFO, szInfo);
+    //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
     //printf_s(szInfo);
 
 
@@ -529,17 +526,18 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
     }
     else if (pBufObj->nOperate == OP_WRITE)
     {
-        conObj.FreeBuffer(pBufObj);
+        conObj.FreeCXBufferObj(pBufObj);
+        conObj.ReduceNumberOfPostBuffers();
         return TRUE;
     }
     else
     {
         sprintf_s(szInfo, 1024, "Error Packet : receive a error packet, pBufObj = %x, pBufObj->nOperate = %d, pBufObj->nSequenceNum = %I64i, free buffer\n",
             (DWORD)pBufObj, pBufObj->nOperate, pBufObj->nSequenceNum);
-        g_cxLog.Log(CXLog::CXLOG_ERROR, szInfo);
+        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
         printf_s(szInfo);
-
-        conObj.FreeBuffer(pBufObj);
+        conObj.FreeCXBufferObj(pBufObj);
+        conObj.ReduceNumberOfPostBuffers();
     }
 
 

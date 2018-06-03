@@ -23,6 +23,7 @@ Description£º
 #include "CXEvent.h"
 #include "CXThread.h"
 #include <list>
+#include "CXLog.h"
 using std::list;
 
 namespace CXCommunication
@@ -47,6 +48,8 @@ namespace CXCommunication
             //CConnectionList m_connectionManager;
             //CKDataTransmitManagement *m_pDataTransmitManager;
             CXEvent m_eveWaitDetect;
+
+            CXLog   *m_pLogHandle;
 
     public:
             CXSocketServerKernel();
@@ -82,6 +85,9 @@ namespace CXCommunication
             int  DetachConnetionToModel(CXConnectionObject &conObj);
 
             uint64 GetConnectionsNumber() { return m_uiConnectionNumber; }
+
+            void SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
+            CXLog *GetLogHandle() { return m_pLogHandle; }
 
     public:
             BOOL PostAccept(PCXBufferObj pBufObj);

@@ -9,12 +9,9 @@ namespace CXCommunication
         CXSessionMessageProcess();
         ~CXSessionMessageProcess();
 
-        virtual int SessionLogin(PCXBufferObj pBuf, CXConnectionSession ** ppSession);
-        virtual int SessionLogout(PCXBufferObj pBuf, CXConnectionSession &session);
-        virtual int SessionSetting(PCXBufferObj pBuf, CXConnectionSession &session);
-
-        virtual int SendCommonMessageReply(CXConnectionObject * pCon,
-            DWORD deMessageCode, PCXBufferObj pBuf);
+        int SessionLogin(PCXMessageData pMes, CXConnectionSession ** ppSession);
+        int SessionLogout(PCXMessageData pMes, CXConnectionSession &session);
+        int SessionSetting(PCXMessageData pMes, CXConnectionSession &session);
 
     };
 }

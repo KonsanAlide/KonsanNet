@@ -27,9 +27,14 @@ Description£º
 #include "CXMemoryCacheManager.h"
 #include "CXSessionsManager.h"
 #include "CXSpinLock.h"
-
+#include <map>
 #include <list>
-using std::list;
+#include "CXDataParserImpl.h"
+#include "CXSessionLevelBase.h"
+#include "CXUserMessageProcess.h"
+#include "CXLog.h"
+#include "CXNetworkInitEnv.h"
+using namespace std;
 
 namespace CXCommunication
 {
@@ -57,7 +62,7 @@ namespace CXCommunication
         //have beed locked by CXConnectionObject::lock
         static int  OnWrite(CXConnectionObject &conObj);
 
-        static int  OnProcessOnePacket(CXConnectionObject &conObj, PCXBufferObj pBufObj);
+        static int  OnProcessOnePacket(CXConnectionObject &conObj, PCXMessageData pMes);
 
         CXSocketServerKernel &GetSocketSeverKernel() { return m_socketServerKernel; }
         CXConnectionsManager &GetConnectionManager() { return m_connectionsManager; }
@@ -71,6 +76,18 @@ namespace CXCommunication
         void   AddReceivedBuffers();
         uint64 GetTotalReceiveBuffers() { return m_uiTotalReceiveBuffers; }
         uint64 GetTotalConnectionsNumber() { return m_socketServerKernel.GetConnectionsNumber(); }
+
+        void SetDataParserHandle(CXDataParserImpl * handle) { m_pDataParserHandle = handle; }
+        CXDataParserImpl *GetDataParserHandle() { return m_pDataParserHandle; }
+
+        void SetUserMessageProcessHandle(CXUserMessageProcessBase * handle) { m_pUserMessageProcessHandle = handle; }
+        CXUserMessageProcessBase *GetUserMessageProcessHandle() { return m_pUserMessageProcessHandle; }
+
+        void SetSessionMessageProcessHandle(CXSessionLevelBase * handle) { m_pSessionMessageProcessHandle = handle; }
+        CXSessionLevelBase *GetSessionMessageProcessHandle() { return m_pSessionMessageProcessHandle; }
+
+        void SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
+        CXLog *GetLogHandle() { return m_pLogHandle; }
 
     public:
             
@@ -88,6 +105,11 @@ namespace CXCommunication
         list<void*> m_lstMessageProcess;
         CXSpinLock m_lock;
         uint64 m_uiTotalReceiveBuffers;
+        CXDataParserImpl *m_pDataParserHandle;
+        CXUserMessageProcessBase *m_pUserMessageProcessHandle;
+        CXSessionLevelBase   *m_pSessionMessageProcessHandle;
+        CXLog                *m_pLogHandle;
+        CXNetworkInitEnv      m_networkInit;
 
     };
 }

@@ -51,10 +51,9 @@ namespace CXCommunication
         WSABUF wsaBuf;
 
         void *pConObj;
-        void *pCacheObj;
         
         //the size of the data in the buffer
-        int  nRealDataLen;
+        int  iBufSize;
 
         //the start point of the left data 
         int nCurDataPointer;
@@ -71,28 +70,6 @@ namespace CXCommunication
         char buf[BUF_SIZE];
     }CXBufferObj, *PCXBufferObj;
 
-    typedef struct _USER_BUFFER_OBJ
-    {
-        //   ==1 the message from client
-        //   ==2 the message from web server
-        //   ==3 the message from transfer server
-        //   ==4 the message from message server
-        //   ==5 the message from backup engine
-        //   ==6 the message from client ui
-        //   ==7 the message from backup tray
-        //   ==8 the message from file client
-        int  nSourceType;
-        uint64 nConnectionIndex;
-        char szUserID[60];
-        char buf[BUF_SIZE];
-        int  nUsedLen;
-    }UserBufferObj, *PUserBufferObj;
-
-    typedef struct _SEND_BUFFER_OBJ
-    {
-        char buf[BUF_SIZE];
-        int  nUsedLen;
-    }SendBufferObj, *PSendBufferObj;
 
     
 }

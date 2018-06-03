@@ -21,6 +21,7 @@ Description£º
 #include "CXConnectionObject.h"
 #include "CXSpinLock.h"
 #include "CXEvent.h"
+#include "CXQueue.h"
 #include <queue>
 using std::queue;
 
@@ -36,7 +37,8 @@ namespace CXCommunication
         DWORD Wait(DWORD dwMilliseconds);
 
     private:
-        queue<void*> m_queue;
+        CXQueue      m_queue;
+        //queue<void*>   m_queue;
         CXSpinLock   m_lock;
         CXEvent      m_event;
     };

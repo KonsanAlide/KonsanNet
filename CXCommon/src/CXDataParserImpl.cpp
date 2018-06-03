@@ -15,17 +15,16 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#include "CXSessionLevelBase.h"
-
-
-using namespace CXCommunication;
-CXSessionLevelBase::CXSessionLevelBase()
+#include "CXDataParserImpl.h"
+namespace CXCommunication
 {
+    CXDataParserImpl::CXDataParserImpl()
+    {
+        //ctor
+    }
+
+    CXDataParserImpl::~CXDataParserImpl()
+    {
+        //dtor
+    }
 }
-
-
-CXSessionLevelBase::~CXSessionLevelBase()
-{
-}
-
-

@@ -19,81 +19,15 @@
 using namespace std;
 using namespace CXCommunication;
 CXNetworkInitEnv g_networkInit;
-CXLog g_cxLog;
+CXLog g_logHandle;
 
 
-int MakePacketBuf(PCXPacketData &ppPacket, int iDataLen)
-{
-    int iPacketLen = iDataLen + sizeof(CXPacketData)-1;
-    byte *pData = new byte[iPacketLen];
-    if (pData == NULL)
-    {
-        return -2;
-    }
 
-    memset(pData, 0, iPacketLen);
-
-    ppPacket = (PCXPacketData)pData;
-    ppPacket->header.wDataLen = iPacketLen - sizeof(ppPacket->header);
-    return 0;
-
-}
-
-
-int ThreadConnectAndSend(void* pVoid)
+int ThreadReadFileTest(void* pVoid)
 {
     CXFileTcpClientTest test;
     test.Test((long)pVoid);
     return -1;
-    CXSocketAddress addr("192.168.0.103", 4355);
-    long nThreadID = (long)pVoid;
-#ifdef WIN32
-    DWORD dwThreadID = GetCurrentThreadId();
-#else
-    DWORD dwThreadID = pthread_self();
-#endif
-    for (int i = 0; i<1; i++)
-    {
-        CXTcpClient tcpClient;
-
-        if (RETURN_SUCCEED != tcpClient.Create())
-        {
-            printf("Failed to create socket ,thread id = %d, id=%d\n", nThreadID, i);
-            return 1;
-        }
-        //TRACE("Try to connect to peer ,thread id = %d, id=%d\n", nThreadID, i);
-
-        char szDesc[2048] = { 0 };
-        sprintf(szDesc, "Try to connect to peer ,thread id = %d, id=%d\n", nThreadID, i);
-        //TraceWasteTime(liLast,szDesc);
-        if (RETURN_SUCCEED != tcpClient.Connect(addr))
-        {
-            printf("Failed to connect to peer ,thread id = %d, id=%d\n", nThreadID, i);
-            return 1;
-        }
-        printf("Had connected to peer ,thread id = %d, id=%d\n", nThreadID, i);
-        //sprintf(szDesc, "Had connected to peer ,thread id = %d\n", nThreadID);
-
-        //TraceWasteTime(liLast, szDesc);
-
-        int iDataLen = 2048;
-        PCXPacketData pPacket = NULL;
-        MakePacketBuf(pPacket, iDataLen);
-        memset(pPacket->buf, '$', pPacket->header.wDataLen);
-
-        for (int i = 0; i<10000; i++)
-        {
-            int nSent = 0;
-            int nRet = tcpClient.SendPacket(pPacket, iDataLen, nSent);
-            if (nRet <= 0)
-                break;
-            //printf_s("######Packet id = %d exit\n", i);
-            //printf_s("Send packet id = %d,\n",i);
-        }
-
-    }
-    printf("######Thread id = %d exit\n", nThreadID);
-    return 0;
 }
 
 
@@ -114,41 +48,21 @@ void TestSession()
 
         //iRet = session.OpenChannel(*pDataChanel, CXClientSocketChannel::DATA_CONNECTION);
 
-        int iPacketLen = 4096;
-        int iDataLen = iPacketLen - sizeof(CXPacketData) + 1;
+        int iPacketLen = 100;
         byte *pData = new byte[iPacketLen];
         if (pData == NULL)
         {
             return;
         }
+        memset(pData, '$', iPacketLen);
 
-        memset(pData, 0, iPacketLen);
-
-        PCXPacketData pPacket = (PCXPacketData)pData;
-        pPacket->dwMesCode = 4001;
-        memset(pPacket->buf, '$', iDataLen);
-        pMainChanel->BuildHeader(pData, iPacketLen, 4001);
         for (int i = 0; i<100000; i++)
         {
             int nSent = 0;
-            int nRet = pMainChanel->Send(pData, iPacketLen, nSent);
-            if (nRet <= 0)
+            int nRet = pMainChanel->SendPacket(pData, iPacketLen, 4001);
+            if (nRet != 0)
                 break;
-            //Sleep(1);
         }
-        /*
-        int iDataLen = 1024;
-        PCXPacketData pPacket = NULL;
-        MakePacketBuf(pPacket, iDataLen);
-        memset(pPacket->buf, '$', pPacket->header.wDataLen);
-        for (int i = 0; i<100000; i++)
-        {
-            int nSent = 0;
-            int nRet = pMainChanel->SendPacket(pPacket, iDataLen, nSent);
-            if (nRet <= 0)
-                break;
-            //Sleep(1);
-        }*/
     }
     session.Close();
     delete pMainChanel;
@@ -161,7 +75,7 @@ void TestConection()
     
     CXSocketAddress addr("192.168.0.108", 4355);
 
-    for (int i=0;i<10000;i++)
+    for (int i=0;i<1;i++)
     {
         /*
         CXClientConnectionSession *pSession = new CXClientConnectionSession();
@@ -184,30 +98,22 @@ void TestConection()
            
         }
         else
-        {/*
+        {
             int iPacketLen = 100;
-            int iDataLen = iPacketLen- sizeof(CXPacketData)+1;
             byte *pData = new byte[iPacketLen];
             if (pData == NULL)
             {
-                return ;
+                return;
             }
+            memset(pData, '$', iPacketLen);
 
-            memset(pData, 0, iPacketLen);
-
-            PCXPacketData pPacket = (PCXPacketData)pData;
-            pPacket->dwMesCode = 4001;
-            memset(pPacket->buf, '$', iDataLen);
-            pConnect->BuildHeader(pData, iPacketLen, 4001);
             for (int i = 0; i<100000; i++)
             {
                 int nSent = 0;
-                int nRet = pConnect->Send(pData, iPacketLen, nSent);
-                if (nRet <= 0)
+                int nRet = pConnect->SendPacket(pData, iPacketLen, 4001);
+                if (nRet != 0)
                     break;
-                //Sleep(1);
             }
-            */
         }
         
         pConnect->Close();
@@ -218,16 +124,16 @@ void TestConection()
 
 void *ThreadWork(void *pVoid)
 {
-    ThreadConnectAndSend(pVoid);
+    //ThreadReadFileTest(pVoid);
     //TestConection();
-    //TestSession();
+    TestSession();
     return 0;
 }
 int main()
 {
     g_networkInit.InitEnv();
 
-    if (!g_cxLog.Initialize("D:\\C++Project\\CXNetworkCommunication\\trunk\\log\\clientlog.log"))
+    if (!g_logHandle.Initialize("../clientlog.log"))
     {
         printf("Failed to initialize the log recorder.\n");
         return -1;
@@ -239,7 +145,7 @@ int main()
 
     CXThread workThread[1000];
     int i = 0;
-    for (i = 0;i<10;i++)
+    for (i = 0;i<100;i++)
     {
         workThread[i].Start(ThreadWork,(void*)i);
     }

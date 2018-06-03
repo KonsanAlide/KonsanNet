@@ -41,6 +41,7 @@ using namespace std;
 
 #include "CXSpinLock.h"
 #include <queue>
+#include "CXGuidGenerate.h"
 
 using namespace std;
 
@@ -70,6 +71,7 @@ namespace CXCommunication
         queue<CXConnectionSession*> m_queueFreeSessions;
         CXSpinLock m_lockFreeSessions;
         CXSpinLock m_lockUsingSessions;
+        CXGuidGenerate m_cxGuidGenerater;
     };
 }
 #endif //CXSESSIONSSMANAGER_H

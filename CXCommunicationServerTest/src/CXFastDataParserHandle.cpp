@@ -15,17 +15,32 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#include "CXSessionLevelBase.h"
-
-
-using namespace CXCommunication;
-CXSessionLevelBase::CXSessionLevelBase()
+#include "CXFastDataParserHandle.h"
+namespace CXCommunication
 {
+    CXFastDataParserHandle::CXFastDataParserHandle()
+    {
+        //ctor
+    }
+
+    CXFastDataParserHandle::~CXFastDataParserHandle()
+    {
+        //dtor
+    }
+
+    bool CXFastDataParserHandle::ParseData(bool bEncrypted, bool bCompressed,
+        const byte *pbSrcBuf, DWORD dwSrcDataLen,
+        byte *pbDestBuf, DWORD dwDestBufLen,
+        DWORD &dwReadDataLen)
+    {
+        return true;
+    }
+
+    bool CXFastDataParserHandle::PrepareData(bool bEncrypted, bool bCompressed,
+        const byte *pbSrcBuf, DWORD dwSrcDataLen,
+        byte *pbDestBuf, DWORD dwDestBufLen,
+        DWORD &dwReadDataLen)
+    {
+        return true;
+    }
 }
-
-
-CXSessionLevelBase::~CXSessionLevelBase()
-{
-}
-
-

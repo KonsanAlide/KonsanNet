@@ -18,43 +18,66 @@ maybe have a different structure size with the other cache object,
 use to save data blocks of different size.
 *****************************************************************************/
 #include "CXMemoryCacheManager.h"
+#ifndef WIN32
+#include <string.h>
+#include <math.h>
+#endif
 
-CXMemoryCacheManager::CXMemoryCacheManager(int iCacheNumber, int iMaxMemorySize)
+CXMemoryCacheManager::CXMemoryCacheManager(DWORD dwInitCacheNumber, 
+    uint64 uiMaxMemorySize, DWORD dwMaxObjectSize)
 {
-    m_iInitCacheNumber = 1;
-    if (iCacheNumber > MAX_CACHE_NUMBER_IN_ONE_KIND)
+    m_dwInitCacheNumber = 1;
+    if (dwInitCacheNumber > MAX_CACHE_NUMBER_IN_ONE_KIND)
     {
-        iCacheNumber = MAX_CACHE_NUMBER_IN_ONE_KIND;
+        dwInitCacheNumber = MAX_CACHE_NUMBER_IN_ONE_KIND;
     }
-    m_iInitCacheNumber = iCacheNumber;
-    //m_iMaxUsableMemorySize = 1024 * 1024 * 1792;
-    m_iMaxUsableMemorySize = iMaxMemorySize;
+    m_dwInitCacheNumber = dwInitCacheNumber;
+
+    m_uiMaxUsableMemorySize = uiMaxMemorySize;
+
+    m_dwMaxObjectSize = dwMaxObjectSize;
+
+    memset(m_ppCaches, 0, sizeof(m_ppCaches));
 }
 
 CXMemoryCacheManager::CXMemoryCacheManager()
 {
-    m_iInitCacheNumber = 1;
-    m_iMaxUsableMemorySize = 1024 * 1024 * 1024;
+    m_dwInitCacheNumber = 1;
+    m_uiMaxUsableMemorySize = 1024 * 1024 * 1024;
+    m_dwMaxObjectSize = 1024 * 1024;
+    memset(m_ppCaches, 0, sizeof(m_ppCaches));
 }
 
 
 CXMemoryCacheManager::~CXMemoryCacheManager()
 {
 }
-
-int  CXMemoryCacheManager::Init(int iObjectSize, int iObjectNumber)
+int  CXMemoryCacheManager::Init(map<DWORD, DWORD>mapCacheConfig)
+//int  CXMemoryCacheManager::Init(DWORD dwObjectSize, DWORD dwObjectNumber)
 {
+    DWORD dwObjectSize = 0;
+    DWORD dwObjectNumber = 0;
+
     m_lock.Lock();
-    CXMemoryCache ** ppArray = m_mapCaches[iObjectSize];
-    if (ppArray == NULL)
+    map<DWORD, DWORD>::iterator it = mapCacheConfig.begin();
+    for (; it!= mapCacheConfig.end();it++)
     {
-        for (int i=0;i<MAX_CACHE_NUMBER_IN_ONE_KIND;i++)
+        dwObjectSize = it->first;
+        dwObjectNumber = it->second;
+        int iIndex = CalculateIndex(dwObjectSize);
+
+        CXMemoryCache ** ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+        //CXMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
+        if (ppArray == NULL)
         {
-            int iRet = AddCache(iObjectSize, iObjectNumber);
-            if (iRet != 0)
+            for (int i = 0; i<MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
             {
-                m_lock.Unlock();
-                return -2;
+                int iRet = AddCache(dwObjectSize, dwObjectNumber, iIndex);
+                if (iRet != 0)
+                {
+                    m_lock.Unlock();
+                    return -2;
+                }
             }
         }
     }
@@ -64,15 +87,31 @@ int  CXMemoryCacheManager::Init(int iObjectSize, int iObjectNumber)
     return RETURN_SUCCEED;
 }
 
-//
-//return value:==-2 failed to allocate memory 
+//add a memory cache
+//iObjectSize: the object size in the memory cache
+//iObjectNumber: the object number in the memory cache
+//iIndex: the index of the m_ppCaches, ==-1 show that need to parse the index from the dwObjectSize
+//return value:==0 succeed 
+//             ==-1 invalid parameter
+//             ==-2 failed to allocate memory 
 //             ==-3 the number of this kind cache is more than  MAX_CACHE_NUMBER_IN_ONE_KIND
-int CXMemoryCacheManager::AddCache(int iObjectSize, int iObjectNumber)
+int CXMemoryCacheManager::AddCache(DWORD dwObjectSize, DWORD dwObjectNumber, int iIndex)
 {
+    if (iIndex > 13 || dwObjectSize>m_uiMaxUsableMemorySize)
+    {
+        return INVALID_PARAMETER;
+    }
     int iRet = 0;
     try
     {
-        CXMemoryCache ** ppArray = m_mapCaches[iObjectSize];
+        //CXMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
+        if (iIndex == -1)//need to parse the index
+        {
+            iIndex = CalculateIndex(dwObjectSize);
+        }
+
+        CXMemoryCache ** ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+
         if (ppArray == NULL)
         {
             //allocate the memory caches that its structure size is 4kb 
@@ -87,7 +126,7 @@ int CXMemoryCacheManager::AddCache(int iObjectSize, int iObjectNumber)
             }
 
             bool bSucceed = true;
-            for (int i = 0; i<m_iInitCacheNumber; i++)
+            for (int i = 0; i<m_dwInitCacheNumber; i++)
             {
                 ppArray[i] = new CXMemoryCache();
                 if (ppArray[i] == NULL)
@@ -97,7 +136,7 @@ int CXMemoryCacheManager::AddCache(int iObjectSize, int iObjectNumber)
                 }
                 else
                 {
-                    iRet = ppArray[i]->Initialize(iObjectSize, iObjectNumber);
+                    iRet = ppArray[i]->Initialize(dwObjectSize, dwObjectNumber);
                     if (iRet != 0)
                     {
                         bSucceed = false;
@@ -107,7 +146,7 @@ int CXMemoryCacheManager::AddCache(int iObjectSize, int iObjectNumber)
             }
             if (!bSucceed)
             {
-                for (int i = 0; i<m_iInitCacheNumber; i++)
+                for (int i = 0; i<m_dwInitCacheNumber; i++)
                 {
                     if (ppArray[i] != NULL)
                     {
@@ -119,7 +158,8 @@ int CXMemoryCacheManager::AddCache(int iObjectSize, int iObjectNumber)
                 delete [] ppArray;
                 return -2;
             }
-            m_mapCaches[iObjectSize] = ppArray;
+            //m_mapCaches[dwObjectSize] = ppArray;
+            m_ppCaches[iIndex] = ppArray;
         }
         else
         {
@@ -136,13 +176,13 @@ int CXMemoryCacheManager::AddCache(int iObjectSize, int iObjectNumber)
                     }
                     else
                     {
-                        iRet = ppArray[i]->Initialize(iObjectSize, iObjectNumber);
+                        iRet = ppArray[i]->Initialize(dwObjectSize, dwObjectNumber);
                         if (iRet != 0)
                         {
                             ppArray[i]->Destroy();
                             delete[]ppArray[i];
                             ppArray[i] = NULL;
-                            return -4;
+                            return -2;
                         }
                     }
                     break;
@@ -162,6 +202,25 @@ int CXMemoryCacheManager::AddCache(int iObjectSize, int iObjectNumber)
     return 0;
 }
 
+int CXMemoryCacheManager::CalculateIndex(DWORD dwObjectSize)
+{
+    int iIndex = 0;
+    int iValue = dwObjectSize / 256;
+    if (iValue > 0)
+    {
+        while (iValue>1)
+        {
+            iValue >>= 1;
+            iIndex++;
+        }
+        if (dwObjectSize % 256 != 0)
+        {
+            iIndex++;
+        }
+    }
+    return iIndex;
+}
+
 void CXMemoryCacheManager::Destory()
 {
 
@@ -170,29 +229,60 @@ void CXMemoryCacheManager::Destory()
 //get a memory cache object,this memory cache object have contains 
 //a lot of continuous small memory blocks of the same size,
 //the size of the small memory blocks had been set to iObjectSize
-CXMemoryCache* CXMemoryCacheManager::GetMemoryCache(int iObjectSize)
+CXMemoryCache* CXMemoryCacheManager::GetMemoryCache(DWORD dwObjectSize)
 {
-    m_lock.Lock();
-    CXMemoryCache ** ppArray = m_mapCaches[iObjectSize];
+    //CXMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
+    int iIndex = CalculateIndex(dwObjectSize);
+    dwObjectSize = pow(2,iIndex) * 256;
+    
+    CXMemoryCache ** ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
     if (ppArray == NULL)
     {
-        int iRet = AddCache(iObjectSize,500);
-        if (iRet!=0)
+        m_lock.Lock();
+        //ppArray = m_mapCaches[dwObjectSize];
+        ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+        if (ppArray == NULL)
         {
-            m_lock.Unlock();
-            return NULL;
-        }
+            int iRet = AddCache(dwObjectSize, 512);
+            if (iRet != 0)
+            {
+                m_lock.Unlock();
+                return NULL;
+            }
 
-        ppArray = m_mapCaches[iObjectSize];
+            //ppArray = m_mapCaches[dwObjectSize];
+            ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+        }
+        m_lock.Unlock();  
     }
 
     if (ppArray != NULL)
     {
-        int i = rand()% MAX_CACHE_NUMBER_IN_ONE_KIND;
-        if (ppArray[i] != NULL)
+        int j = rand()% MAX_CACHE_NUMBER_IN_ONE_KIND;
+        if (ppArray[j] != NULL)
         {
+            return ppArray[j];
+        }
+        else
+        {
+            m_lock.Lock();
+            ppArray[j] = new CXMemoryCache();
+            if (ppArray[j] == NULL)
+            {
+                return NULL;
+            }
+            else
+            {
+                int iRet = ppArray[j]->Initialize(dwObjectSize, 512);
+                if (iRet != 0)
+                {
+                    ppArray[j]->Destroy();
+                    delete[]ppArray[j];
+                    ppArray[j] = NULL;
+                    return NULL;
+                }
+            }
             m_lock.Unlock();
-            return ppArray[i];
         }
         for (int i = 0; i<MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
         {
@@ -200,14 +290,11 @@ CXMemoryCache* CXMemoryCacheManager::GetMemoryCache(int iObjectSize)
             {
                 if (ppArray[i]->IsHaveObject())
                 {
-                    m_lock.Unlock();
                     return ppArray[i];
                 }
             }
         }
     }
-
-    m_lock.Unlock();
 
     return NULL;
 
@@ -217,4 +304,145 @@ CXMemoryCache* CXMemoryCacheManager::GetMemoryCache(int iObjectSize)
 void CXMemoryCacheManager::FreeMemoryCache(CXMemoryCache *pObj)
 {
 
+}
+
+void * CXMemoryCacheManager::GetBuffer(DWORD dwObjectSize)
+{
+    if (dwObjectSize > m_dwMaxObjectSize)
+    {
+        return NULL;
+    }
+
+    int iIndex = CalculateIndex(dwObjectSize);
+    dwObjectSize = pow(2, iIndex) * 256;
+
+    CXMemoryCache ** ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+    if (ppArray == NULL)
+    {
+        m_lock.Lock();
+        //ppArray = m_mapCaches[dwObjectSize];
+        ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+        if (ppArray == NULL)
+        {
+            int iRet = AddCache(dwObjectSize, 512);
+            if (iRet != 0)
+            {
+                m_lock.Unlock();
+                return NULL;
+            }
+
+            //ppArray = m_mapCaches[dwObjectSize];
+            ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+        }
+        m_lock.Unlock();
+    }
+
+    if (ppArray != NULL)
+    {
+        void *pObj = NULL;
+        int j = rand() % MAX_CACHE_NUMBER_IN_ONE_KIND;
+        if (ppArray[j] == NULL)
+        {
+            m_lock.Lock();
+            ppArray[j] = new CXMemoryCache();
+            if (ppArray[j] == NULL)
+            {
+                pObj = NULL;
+            }
+            else
+            {
+                int iRet = ppArray[j]->Initialize(dwObjectSize, 512);
+                if (iRet != 0)
+                {
+                    ppArray[j]->Destroy();
+                    delete[]ppArray[j];
+                    ppArray[j] = NULL;
+                }
+            }
+            m_lock.Unlock();
+        }
+
+        if (ppArray[j] != NULL)
+        {
+            pObj = ppArray[j]->GetObject();
+            if (pObj)
+            {
+                return pObj;
+            }
+        }
+
+        for (int i = 0; i<MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
+        {
+            if (ppArray[i] != NULL)
+            {
+                if (ppArray[i]->IsHaveObject())
+                {
+                    pObj = ppArray[i]->GetObject();
+                    if (pObj)
+                        return pObj;
+                }
+            }
+        }
+    }
+
+    return NULL;
+}
+void   CXMemoryCacheManager::FreeBuffer(void *pBuf)
+{
+    if (pBuf == NULL)
+        return;
+    CXMemoryCache::cx_cache_obj *pObj = (CXMemoryCache::cx_cache_obj *)((byte*)pBuf - sizeof(CXMemoryCache::cx_cache_obj));
+    if (pObj != NULL)
+    {
+        if (pObj->pThis != NULL)
+        {
+            pObj->pThis->FreeObject(pBuf);
+        }
+    }
+}
+
+//Parameter: pDestBuf: the pointer of the destination buffer that must be allocated by a CXMemoryCacheManager object,otherwise, the program will crash 
+//           the pDestBuf must be the beginning pointer of the object allocated from the CXMemoryCacheManager object
+//           iOffset : the beginning offset of the destination buffer
+//           pSrc    : the pointer of the source buffer
+//           iCopyLen: the length needed to copy from the source buffer to the destination buffer, the unit is bytes    
+//Return : ==true succeed
+//         ==false , not have enough space to save the bytes from the source buffer    
+bool  CXMemoryCacheManager::MemcpyBytes(byte *pDestBuf, int iOffset, byte *pSrc, int iCopyLen)
+{
+    if (pDestBuf == NULL || pSrc==NULL)
+        return false;
+    CXMemoryCache::cx_cache_obj *pObj = (CXMemoryCache::cx_cache_obj *)((byte*)pDestBuf - sizeof(CXMemoryCache::cx_cache_obj));
+    if (pObj != NULL)
+    {
+        if (pObj->pThis != NULL)
+        {
+            if (pObj->pThis->GetObjectSize() >= (iOffset + iCopyLen))
+            {
+                memcpy(pDestBuf+ iOffset, pSrc, iCopyLen);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+//Parameter: pBuf    : the pointer of the buffer that must be allocated by a CXMemoryCacheManager object,otherwise, the program will crash 
+//           the pBuf must be the beginning pointer of the object allocated from the CXMemoryCacheManager object
+//           iLen    : the length needed to memset, the unit is bytes
+void CXMemoryCacheManager::MemsetZero(byte *pBuf, int iLen)
+{
+    if (pBuf == NULL)
+        return ;
+    CXMemoryCache::cx_cache_obj *pObj = (CXMemoryCache::cx_cache_obj *)((byte*)pBuf - sizeof(CXMemoryCache::cx_cache_obj));
+    if (pObj != NULL)
+    {
+        if (pObj->pThis != NULL)
+        {
+            if (pObj->pThis->GetObjectSize() >= iLen)
+            {
+                memset(pBuf, 0, iLen);
+            }
+        }
+    }
 }

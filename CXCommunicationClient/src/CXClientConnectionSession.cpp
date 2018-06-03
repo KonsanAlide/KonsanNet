@@ -77,7 +77,7 @@ int CXClientConnectionSession::RemoveConnection(CXClientSocketChannel &conObj)
     {
 
         list<CXClientSocketChannel*>::iterator it = m_lstMessageConnections.begin();
-        for (; it != m_lstMessageConnections.end(); it++)
+        for (; it != m_lstMessageConnections.end(); ++it)
         {
             if (*it == &conObj)
             {
@@ -88,7 +88,7 @@ int CXClientConnectionSession::RemoveConnection(CXClientSocketChannel &conObj)
         }
 
         it = m_lstDataConnections.begin();
-        for (; it != m_lstDataConnections.end(); it++)
+        for (; it != m_lstDataConnections.end(); ++it)
         {
             if (*it == &conObj)
             {
@@ -114,7 +114,7 @@ void CXClientConnectionSession::Close()
     }
 
     list<CXClientSocketChannel*>::iterator it = m_lstMessageConnections.begin();
-    for (; it != m_lstMessageConnections.end(); it++)
+    for (; it != m_lstMessageConnections.end(); )
     {
         CXClientSocketChannel *pChannel = *it;
         pChannel->Close();
@@ -122,7 +122,7 @@ void CXClientConnectionSession::Close()
     }
 
     it = m_lstDataConnections.begin();
-    for (; it != m_lstDataConnections.end(); it++)
+    for (; it != m_lstDataConnections.end();)
     {
         CXClientSocketChannel *pChannel = *it;
         pChannel->Close();

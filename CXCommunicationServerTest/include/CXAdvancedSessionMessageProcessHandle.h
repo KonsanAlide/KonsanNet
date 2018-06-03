@@ -15,17 +15,24 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
+#ifndef CXADVANCEDSESSIONMESSAGEPROCESSHANDLE_H
+#define CXADVANCEDSESSIONMESSAGEPROCESSHANDLE_H
+
 #include "CXSessionLevelBase.h"
 
-
-using namespace CXCommunication;
-CXSessionLevelBase::CXSessionLevelBase()
+namespace CXCommunication
 {
+    class CXAdvancedSessionMessageProcessHandle :public CXSessionLevelBase
+    {
+    public:
+        CXAdvancedSessionMessageProcessHandle();
+        ~CXAdvancedSessionMessageProcessHandle();
+
+        int SessionLogin(PCXMessageData pMes, CXConnectionSession ** ppSession);
+        int SessionLogout(PCXMessageData pMes, CXConnectionSession &session);
+        int SessionSetting(PCXMessageData pMes, CXConnectionSession &session);
+
+    };
 }
-
-
-CXSessionLevelBase::~CXSessionLevelBase()
-{
-}
-
+#endif //CXADVANCEDSESSIONMESSAGEPROCESSHANDLE_H
 

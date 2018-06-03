@@ -195,7 +195,7 @@ namespace CXCommunication
     {
         unordered_map<uint64, CXConnectionObject *>::iterator it;
         it = m_mapUsingConnections.begin();
-        for (; it != m_mapUsingConnections.end(); it++)
+        for (; it != m_mapUsingConnections.end(); )
         {
             it = m_mapUsingConnections.erase(it);
         }

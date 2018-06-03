@@ -1,7 +1,5 @@
 #include "CXSessionsManager.h"
-#include "CXGuidGenerate.h"
 
-extern CXGuidGenerate g_cxGuidGenerater;
 using  namespace CXCommunication;
 
 CXSessionsManager::CXSessionsManager()
@@ -85,7 +83,7 @@ void CXSessionsManager::RemoveUsingSession(string strSessionGuid)
 
 string CXSessionsManager::BuildSessionGuid()
 {
-    return g_cxGuidGenerater.GenerateGuid();
+    return m_cxGuidGenerater.GenerateGuid();
 }
 
 CXConnectionSession * CXSessionsManager::FindUsingSession(string strSessionGuid)
@@ -109,12 +107,12 @@ void CXSessionsManager::Destroy()
 {
     unordered_map<string, CXConnectionSession *>::iterator it;
     it = m_mapUsingSessions.begin();
-    for (;it!= m_mapUsingSessions.end();it++)
+    for (;it!= m_mapUsingSessions.end();)
     {
         it=m_mapUsingSessions.erase(it);
     }
 
-    for (int i=0;i<m_queueFreeSessions.size();i++)
+    for (int i=0;i<m_queueFreeSessions.size();)
     {
         m_queueFreeSessions.pop();
     }

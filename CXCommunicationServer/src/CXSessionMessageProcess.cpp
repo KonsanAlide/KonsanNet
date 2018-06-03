@@ -18,28 +18,29 @@ CXSessionMessageProcess::~CXSessionMessageProcess()
 {
 }
 
-int CXSessionMessageProcess::SessionLogin(PCXBufferObj pBuf, CXConnectionSession ** ppSession)
+int CXSessionMessageProcess::SessionLogin(PCXMessageData pMes, CXConnectionSession ** ppSession)
 {
-    if (pBuf == NULL)
+    if (pMes == NULL)
     {
         return INVALID_PARAMETER;
     }
 
-    CXConnectionObject *pCon = (CXConnectionObject*)pBuf->pConObj;
-    PCXBufferObj pSendBuf = pCon->GetBuffer();
-    PCXCommonMessageReply pReply = (PCXCommonMessageReply)(pSendBuf->wsaBuf.buf + sizeof(CXPacketData) - 1);
+    CXConnectionObject *pCon = (CXConnectionObject*)pMes->pConObj;
+
+    DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
+    byte  bySendBuf[1024] = {0};
+    PCXCommonMessageReply pReply = (PCXCommonMessageReply)bySendBuf;
     int i = 1;
     int iRet = RETURN_SUCCEED;
     while (i-->0)
     {
-        PCXSessionLogin pPacket = (PCXSessionLogin)(pBuf->wsaBuf.buf + sizeof(CXPacketData) - 1);
-        if (pPacket->dwUserDataLen <= 0 || pPacket->dwUserDataLen >= (pBuf->wsaBuf.len))
+        PCXSessionLogin pPacket = (PCXSessionLogin)pMes->buf;
+        if (pPacket->dwUserDataLen <= 0 || pPacket->dwUserDataLen >= (pMes->dwDataLen))
         {
             iRet = -3;
             pReply->dwReplyCode = 201;
             break;
         }
-
 
         CXConnectionSession * pSession = (CXConnectionSession *)pCon->GetSession();
         CXSessionsManager * pManager = (CXSessionsManager *)pCon->GetSessionsManager();
@@ -94,7 +95,7 @@ int CXSessionMessageProcess::SessionLogin(PCXBufferObj pBuf, CXConnectionSession
                 strcat(pReply->szData, "\r");
                 strcat(pReply->szData, strCode.c_str());
                 pReply->dwDataLen  =strlen(pReply->szData) + 1;
-                
+                dwSendMesLen += pReply->dwDataLen;
             }
             else
             {
@@ -165,59 +166,20 @@ int CXSessionMessageProcess::SessionLogin(PCXBufferObj pBuf, CXConnectionSession
         break;
     }
 
-    int iTransRet = SendCommonMessageReply(pCon, CX_SESSION_LOGIN_REPLY_CODE, pSendBuf);
-    pCon->FreeBuffer(pSendBuf);
-    if (iTransRet == -2 || iRet==-2) //need to close connection
+    bool bRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_SESSION_LOGIN_REPLY_CODE);
+    if (!bRet || iRet==-2) //need to close connection
     {
         return -2;
     }
     return iRet;
 }
 
-int CXSessionMessageProcess::SessionLogout(PCXBufferObj pBuf, CXConnectionSession &session)
+int CXSessionMessageProcess::SessionLogout(PCXMessageData pMes, CXConnectionSession &session)
 {
     return RETURN_SUCCEED;
 }
 
-int CXSessionMessageProcess::SessionSetting(PCXBufferObj pBuf, CXConnectionSession &session)
+int CXSessionMessageProcess::SessionSetting(PCXMessageData pMes, CXConnectionSession &session)
 {
-    return RETURN_SUCCEED;
-}
-
-int CXSessionMessageProcess::SendCommonMessageReply(CXConnectionObject * pCon,
-    DWORD deMessageCode, PCXBufferObj pBuf)
-{
-    PCXCommonMessageReply pReply = (PCXCommonMessageReply)(pBuf->wsaBuf.buf + sizeof(CXPacketData) - 1);
-    int iPacketBodyLen = sizeof(DWORD)+sizeof(CXCommonMessageReply) - 1 + pReply->dwDataLen;
-    byte *pBodyData = (byte*)(pBuf->wsaBuf.buf + sizeof(CXPacketHeader));
-
-
-    DWORD dwCheckSum = 0;
-    for (int i = 0; i<iPacketBodyLen; i++)
-    {
-        dwCheckSum += (unsigned int)pBodyData[i];
-    }
-
-    //send the header
-    PCXPacketHeader pTcpHeader = (PCXPacketHeader)pBuf->wsaBuf.buf;
-
-    pTcpHeader->wDataLen = iPacketBodyLen;
-    pTcpHeader->byReserve = 0x15;
-    pTcpHeader->byType = 2;
-    pTcpHeader->dwFlag = 0x25f7;
-    pTcpHeader->dwCheckSum = dwCheckSum;
-    pTcpHeader->dwPacketNum = 0;
-
-    PCXPacketData pPacket = (PCXPacketData)(pBuf->wsaBuf.buf);
-    pPacket->dwMesCode = deMessageCode;
-    int iPacketLen = iPacketBodyLen + sizeof(CXPacketHeader);
-    pBuf->wsaBuf.len = iPacketLen;
-
-    DWORD dwSendLen = 0;
-    int iRet = pCon->PostSendBlocking(pBuf, dwSendLen);
-    if (iRet != 0)
-    {
-        return -2;
-    }
     return RETURN_SUCCEED;
 }

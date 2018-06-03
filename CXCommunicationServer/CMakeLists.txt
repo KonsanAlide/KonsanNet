@@ -17,6 +17,7 @@ INCLUDE_DIRECTORIES(
 ../CXThread/include
 ../CXLog/include
 ../CXFile/include
+../CXContainer/include
 ./include
 )
 
@@ -43,8 +44,8 @@ SET(LIBRARIES
  )
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
-
-SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
+SET(LIBRARY_OUTPUT_PATH ../../lib)
+#SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     LINK_DIRECTORIES(../../lib/debug)
@@ -54,7 +55,10 @@ ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 
 #add executable file
-add_executable(CXCommunicationServer ${DIR_SRCS} main.cpp )
+#add_executable(CXCommunicationServer ${DIR_SRCS} main.cpp )
+ADD_LIBRARY(CXCommunicationServer SHARED ${DIR_SRCS})
+#添加静态库
+ADD_LIBRARY(CXCommunicationServer_static STATIC ${DIR_SRCS})
 
 TARGET_LINK_LIBRARIES(CXCommunicationServer ${LIBRARIES})
 
@@ -66,6 +70,7 @@ IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXCommunicationServer CXMemoryCache_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationServer cxlog_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationServer cxfile_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer CXContainer_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXCommunicationServer libCXLock.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer libCXEvent.so)
@@ -74,6 +79,7 @@ ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXCommunicationServer libCXMemoryCache.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer libcxlog.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer libcxfile.so)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer libCXContainer.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer uuid)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 

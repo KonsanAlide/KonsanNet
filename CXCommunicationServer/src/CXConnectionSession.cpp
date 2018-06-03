@@ -80,7 +80,7 @@ namespace CXCommunication
         {
 
             list<CXConnectionObject*>::iterator it = m_lstMessageConnections.begin();
-            for (; it != m_lstMessageConnections.end(); it++)
+            for (; it != m_lstMessageConnections.end(); ++it)
             {
                 if (*it == &conObj)
                 {
@@ -91,7 +91,7 @@ namespace CXCommunication
             }
 
             it = m_lstDataConnections.begin();
-            for (; it != m_lstDataConnections.end(); it++)
+            for (; it != m_lstDataConnections.end(); ++it)
             {
                 if (*it == &conObj)
                 {
@@ -102,7 +102,7 @@ namespace CXCommunication
             }
 
             it = m_lstObjectConnections.begin();
-            for (; it != m_lstObjectConnections.end(); it++)
+            for (; it != m_lstObjectConnections.end(); ++it)
             {
                 if (*it == &conObj)
                 {

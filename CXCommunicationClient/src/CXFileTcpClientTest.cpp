@@ -52,11 +52,11 @@ int CXFileTcpClientTest::Test(int iNumber)
     gettimeofday( &end, NULL );
     printf("end   : %d.%d\n", end.tv_sec, end.tv_usec);
 #endif
-    //client.SetRemoteServerInfo("192.168.0.108",4355,"test","123");
-    //string strRemoteFilePath = "/home/cheng/test/TeamViewer_Setup_zhcn.exe";
+    client.SetRemoteServerInfo("192.168.0.108",4355,"test","123");
+    string strRemoteFilePath = "/home/cheng/test/TeamViewer_Setup_zhcn.exe";
 
-    client.SetRemoteServerInfo("192.168.0.104",4355,"test","123");
-    string strRemoteFilePath = "D:/Tool/TeamViewer_Setup_zhcn.exe";
+    //client.SetRemoteServerInfo("192.168.0.104",4355,"test","123");
+    //string strRemoteFilePath = "D:/Tool/TeamViewer_Setup_zhcn.exe";
     string strLocalFilePath = "D:/DataReceive/TeamViewer_Setup_zhcn.exe";
 
     char szNumber[20] = {0};
@@ -81,16 +81,21 @@ int CXFileTcpClientTest::Test(int iNumber)
         fclose(fileLocal);
         return -3;
     }
-    byte byFileData[CLIENT_BUF_SIZE] = {0};
+    //byte byFileData[CLIENT_BUF_SIZE] = {0};
+    //int iReadLenInOnce = CLIENT_BUF_SIZE;
+    //int iLeftBufLen = CLIENT_BUF_SIZE - (sizeof(CXPacketHeader) + sizeof(DWORD)) - sizeof(CXFileReadReply) + 1;
+    
+    int iOneDataLen = 4096;
+    byte *byFileData = new byte[iOneDataLen];
     uint64 uiReadLen = 0;
-    int iReadLenInOnce = CLIENT_BUF_SIZE;
+    int iReadLenInOnce = iOneDataLen;
     int iHaveReadLen = 0;
     size_t sWriteLen = 0;
-    int iLeftBufLen = CLIENT_BUF_SIZE - (sizeof(CXPacketHeader) + sizeof(DWORD)) - sizeof(CXFileReadReply) + 1;
+    
 
     while (uiReadLen<uiFileLen)
     {
-        iReadLenInOnce = iLeftBufLen;
+        iReadLenInOnce = iOneDataLen;
         if (iReadLenInOnce > (uiFileLen - uiReadLen))
         {
             iReadLenInOnce = uiFileLen - uiReadLen;

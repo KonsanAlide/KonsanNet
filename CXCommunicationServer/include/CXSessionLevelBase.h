@@ -28,9 +28,9 @@ namespace CXCommunication
         CXSessionLevelBase();
         virtual ~CXSessionLevelBase();
 
-        virtual int SessionLogin(PCXBufferObj pBuf, CXConnectionSession ** ppSession);
-        virtual int SessionLogout(PCXBufferObj pBuf, CXConnectionSession &session);
-        virtual int SessionSetting(PCXBufferObj pBuf, CXConnectionSession &session);
+        virtual int SessionLogin(PCXMessageData pMes, CXConnectionSession ** ppSession)=0;
+        virtual int SessionLogout(PCXMessageData pMes, CXConnectionSession &session)=0;
+        virtual int SessionSetting(PCXMessageData pMes, CXConnectionSession &session)=0;
     };
 }
 #endif // CXSESSIONLEVLBASE_H

@@ -15,6 +15,7 @@ SET(CMAKE_BUILD_TYPE "Debug")
 
 # Add header file include directories
 # Add block directories
+add_subdirectory(CXCommon)
 add_subdirectory(CXEvent)
 add_subdirectory(CXLock)
 add_subdirectory(CXMemoryCache)
@@ -22,8 +23,11 @@ add_subdirectory(CXSocketWrapper)
 add_subdirectory(CXThread)
 add_subdirectory(CXLog)
 add_subdirectory(CXFile)
+add_subdirectory(CXContainer)
 add_subdirectory(CXCommunicationClient)
 add_subdirectory(CXCommunicationServer)
+add_subdirectory(CXCommunicationServerTest)
+
 
 # Target
 
