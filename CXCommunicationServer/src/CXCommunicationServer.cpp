@@ -165,13 +165,15 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
     }
     pComServer->AddReceivedBuffers();
     
-
+    //SetFileCompletionNotificationModes
     bool bNeedClose = false;
     int iRet = conObj.PostRecv(BUF_SIZE);
     if (iRet != 0)
     {
         bNeedClose = true;
     }
+    //conObj.FreeCXBufferObj(pBufObj);
+    //return 0;
 
     iRet = conObj.RecvPacket(pBufObj, dwTransDataOfBytes);
     if (iRet != 0)
@@ -180,7 +182,7 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
     }
     if (!bNeedClose)
     {
-        if (conObj.GetState() == 3)//closing
+        if (conObj.GetState() >= 3)//closing
         {
             bNeedClose = true;
         }
@@ -208,11 +210,12 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLo
     bool bFreeConnection = false;
 
     if(bLockBySelf)
-        conObj.Lock();
+        conObj.LockRead();
+
     if (conObj.GetState() == 4)
     {
         if (bLockBySelf)
-            conObj.UnLock();
+            conObj.UnlockRead();
         return;
     }
     if (conObj.GetState() ==1 || conObj.GetState()==2)
@@ -247,7 +250,7 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLo
         bFreeConnection = true;
     }
     if (bLockBySelf)
-        conObj.UnLock();
+        conObj.UnlockRead();
 
     if (bFreeConnection)
     {
@@ -255,7 +258,7 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLo
         // but some thread are also using this pointer of this connection,
         // in this case , maybe some error occur.
         m_connectionsManager.AddFreeConnectionObj(&conObj);
-        //printf("connection close ,connetcion id=%I64i,connetcion=%x,socket =%d\n", conObj.GetConnectionIndex(),&conObj, conObj.GetSocket());
+        //printf("connection close ,connetcion id=%lld,connections=%lld\n", conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber());
     }
 
 }

@@ -47,7 +47,7 @@ CXFileMessageProcessHandle::~CXFileMessageProcessHandle()
 int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXConnectionObject* pCon,
     CXConnectionSession *pSession)
 {
-    DWORD dwMessageCode = pMes->dwMesCode;
+    DWORD dwMessageCode = pMes->bodyData.dwMesCode;
     int iReceiveDataLen = pMes->dwDataLen;
 
     DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
@@ -62,7 +62,7 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
 
         while (true)
         {
-            PCXFileOpenFile pData = (PCXFileOpenFile)pMes->buf;
+            PCXFileOpenFile pData = (PCXFileOpenFile)pMes->bodyData.buf;
             if (pData->dwFilePathLen <= 0 || pData->dwFilePathLen>iReceiveDataLen)
             {
                 pReply->dwReplyCode = 201;
@@ -116,7 +116,7 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
 
         while (true)
         {
-            PCXFileRead pData = (PCXFileRead)pMes->buf;
+            PCXFileRead pData = (PCXFileRead)pMes->bodyData.buf;
             if (pData->dwReadLen <= 0 || pData->dwReadLen>(1024 * 1023))
             {
                 pReply->dwReplyCode = 201;
@@ -208,7 +208,7 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
         PCXCommonMessageReply pReply = (PCXCommonMessageReply)bySendBuf;
         while (true)
         {
-            PCXFileClose pData = (PCXFileClose)pMes->buf;
+            PCXFileClose pData = (PCXFileClose)pMes->bodyData.buf;
 
             pFile = (CXFile64 *)pSession->GetData("file");
             if (pFile == NULL)

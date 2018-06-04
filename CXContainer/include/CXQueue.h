@@ -36,7 +36,7 @@ Description£ºThis class manage a list of some large memory blocks,
 #endif
 
 #include "PlatformDataTypeDefine.h"
-
+#include "CXQueueData.h"
 #include <stdio.h>
 #include <list>
 
@@ -46,66 +46,37 @@ namespace CXCommunication
     class CXQueue
     {
     public:
-        struct cx_list_node
-        {
-            cx_list_node *pNext;
-            cx_list_node *pPrev;
-            void *pData;
-        };
-
-        struct cx_list_header
-        {
-            cx_list_header *pNext;
-            cx_list_node *pList;  
-        };
-
-    public:
         CXQueue();
         virtual ~CXQueue();
         //initialize the first memory block
-        int  Init(DWORD dwInitSize= 10240);
-        
+        int   Init(DWORD dwInitSize= 10240); 
 
         bool  Push(void *pData);
+        
         void  Pop();
         void* Front();
-        int   Size() { return m_dwNumberOfListNodes; }
+
+        //pop the front node, and get the data in the front node
+        void* PopFront();
+
+        int   Size() { return m_firstQueueData.Size()+ m_secondQueueData.Size(); }
         void  Clear();
+        bool  CompactMemory();
+        void  SetAutoCompactMemory(bool bSet) { m_bAutoCompactMemory = bSet; }
+        bool  IsAutoCompactMemory() { return m_bAutoCompactMemory; }
+
 
     private:
-        //allocate a new memory block, add to the end of the m_pBlockList
-        //return value: ==0 succeed ,==-1 allocate a memory block failed
-        int  AllocateMemoryBlock();
-
-        //get a free object
-        cx_list_node * GetNode();
-
-        //free a object
-        void FreeNode(void*pObject);
-
-        //destroy all momory blocks
-        void Destroy();
-
-    private:
-
-        //the head pointer of the list
-        cx_list_node *m_pListHead;
-        //the end pointer of the the list
-        cx_list_node *m_pListEnd;
-
-        //the head pointer of the empty list
-        cx_list_node *m_pEmptyListHead;
-        //the end pointer of the empty list
-        cx_list_node *m_pEmptyListEnd;
-
-        cx_list_header *m_plstBlocksHead;
-        cx_list_header *m_plstBlocksEnd;
+        CXQueueData *m_pQueueData;
+        CXQueueData *m_pQueueDataBak;
+        CXQueueData m_firstQueueData;
+        CXQueueData m_secondQueueData;
+        
+        DWORD m_dwInitSize;
 
         bool  m_bInited;
-        DWORD m_dwNumberOfListNodes;
-        DWORD m_dwNumberOfEmptyNodes;
-        DWORD m_dwNumberOfBlocks;
-        DWORD m_dwInitSize;
+        bool  m_bAutoCompactMemory;
+        bool  m_isSwappingQueue;
     };
 }
 #endif // CXQUEUE_H

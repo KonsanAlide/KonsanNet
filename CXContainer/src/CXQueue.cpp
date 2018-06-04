@@ -28,30 +28,19 @@ This class have a spinlock to solve the problem of thread synchronization.
 using namespace CXCommunication;
 CXQueue::CXQueue()
 {
+    m_pQueueData = &m_firstQueueData;
+    m_pQueueDataBak = &m_secondQueueData;
 
-    //the head pointer of the empty memory object list
-    m_pEmptyListHead = NULL;
-    //the end pointer of the empty memory object list
-    m_pEmptyListEnd = NULL;
-
-    //the head pointer of the memory block list
-    m_pListHead = NULL;
-    //the end pointer of the memory block list
-    m_pListEnd = NULL;
-
-    m_plstBlocksHead = NULL;
-    m_plstBlocksEnd = NULL;
-
-    m_dwNumberOfListNodes=0;
-    m_dwNumberOfEmptyNodes = 0;
-    m_dwNumberOfBlocks = 0;
     m_bInited = false;
     m_dwInitSize = 10240;
+    m_bAutoCompactMemory = true;
+    m_isSwappingQueue = false;
 }
 
 CXQueue::~CXQueue()
 {
-    Destroy();
+    m_firstQueueData.Destroy();
+    m_secondQueueData.Destroy();
 }
 //initialize the first memory block
 int CXQueue::Init(DWORD dwInitSize)
@@ -61,117 +50,16 @@ int CXQueue::Init(DWORD dwInitSize)
         return 0;
     }
 
-    DWORD dwObjectSize = sizeof(cx_list_node);
-    m_dwInitSize = dwInitSize;
-
-    int nRet = AllocateMemoryBlock();
-    if(nRet==0)
+    int iRet = m_firstQueueData.Init(dwInitSize);
+    if (iRet == 0)
     {
         m_bInited = true;
     }
+    m_dwInitSize = dwInitSize;
 
-    return nRet;
+    return iRet;
 }
 
-void CXQueue::Destroy()
-{
-    if (m_bInited)
-    {
-        cx_list_header * pHeader = m_plstBlocksHead;
-        cx_list_header * pNext = NULL;
-        while (pHeader != NULL)
-        {
-            pNext = pHeader->pNext;
-            delete[] (byte*)pHeader;
-        }
-
-        //the head pointer of the empty list
-        m_pEmptyListHead = NULL;
-        //the end pointer of the emptylist
-        m_pEmptyListEnd = NULL;
-
-        //the head pointer of the list
-        m_pListHead = NULL;
-        //the end pointer of the list
-        m_pListEnd = NULL;
-
-        m_plstBlocksHead = NULL;
-        m_plstBlocksEnd = NULL;
-
-        m_dwNumberOfListNodes = 0;
-        m_dwNumberOfEmptyNodes = 0;
-        m_dwNumberOfBlocks = 0;
-        m_bInited = false;
-        m_dwInitSize = 1024;
-    }
-
-}
-
-//allocate a new memory block, add to the end of the m_pBlockList
-//return value: ==0 succeed ,==-1 allocate a memory block failed
-int  CXQueue::AllocateMemoryBlock()
-{
-    int iRet = 0;
-    int iObjectStructSize = sizeof(cx_list_node);
-    int iBufferSize = iObjectStructSize *m_dwInitSize + sizeof(cx_list_header);
-    byte *pBuf = NULL;
-    try
-    {
-        pBuf = new byte[iBufferSize];
-        if (pBuf == NULL)
-        {
-            return -1;
-        }
-    }
-    catch (const bad_alloc& e)
-    {
-        return -1;
-    }
-
-    memset(pBuf, 0, iBufferSize);
-    cx_list_header * pListHeader = (cx_list_header*)pBuf;
-
-    byte *pListData = pBuf + sizeof(cx_list_header);
-    cx_list_node * pObjectList = (cx_list_node*)pListData;
-
-    if (m_plstBlocksHead == NULL)
-    {
-        m_plstBlocksEnd = m_plstBlocksHead = pListHeader;
-    }
-    else
-    {
-        m_plstBlocksEnd->pNext = pListHeader;
-    }
-
-    int i = 1;
-    cx_list_node * pPrevNode = pObjectList;
-    pObjectList->pPrev = NULL;
-    pObjectList->pNext = (cx_list_node*)(pListData + iObjectStructSize);
-    pObjectList = pObjectList->pNext;
-    while (++i < m_dwInitSize)
-    {
-        pObjectList->pNext = (cx_list_node*)(pListData + iObjectStructSize *i);
-        pObjectList->pPrev = pPrevNode;
-        pPrevNode = pObjectList;
-        pObjectList = pObjectList->pNext;
-    }
-    pObjectList->pNext = NULL;
-    pObjectList->pPrev = pPrevNode;
-    m_dwNumberOfBlocks++;
-
-    if (m_pEmptyListHead == NULL)
-    {
-        m_pEmptyListHead = (cx_list_node*)pListData;
-    }
-    else
-    {
-        m_pEmptyListEnd->pNext = (cx_list_node*)pListData;
-        m_pEmptyListEnd->pNext->pPrev = m_pEmptyListEnd;
-    }
-    m_pEmptyListEnd = pObjectList;
-
-    return 0;
-}
 
 bool  CXQueue::Push(void *pData)
 {
@@ -182,142 +70,113 @@ bool  CXQueue::Push(void *pData)
             return false;
         }
     }
-    cx_list_node *pNode = GetNode();
-    if (pNode)
+    if (m_bAutoCompactMemory)
     {
-        pNode->pData = pData;
-
-        if (m_pListEnd != NULL)
-        {
-            pNode->pPrev = m_pListEnd;
-            m_pListEnd->pNext = pNode;
-            m_pListEnd = pNode;
-        }
-        else
-        {
-            m_pListEnd = m_pListHead = pNode;
-        }
-        ++m_dwNumberOfListNodes;
-        return true;
+        CompactMemory();
     }
-    return false;
+    if (m_isSwappingQueue)
+    {
+        if (m_pQueueDataBak->GetNumberOfUsingNodes() == 0)
+        {
+            m_pQueueDataBak->Destroy();
+            m_isSwappingQueue = false;
+        }
+    }
+
+
+    return m_pQueueData->Push(pData);
 }
+
 void  CXQueue::Pop()
 {
-    if (m_pListHead != NULL)
+    if (m_bAutoCompactMemory)
     {
-        cx_list_node *pNode = m_pListHead;
-        if (m_pListHead->pNext == NULL)
+        CompactMemory();
+    }
+
+    if (m_isSwappingQueue)
+    {
+        if (m_pQueueDataBak->GetNumberOfUsingNodes() == 0)
         {
-            m_pListHead= m_pListEnd = NULL;
-            --m_dwNumberOfListNodes;
-            FreeNode(pNode);
-            return;
+            m_pQueueDataBak->Destroy();
+            m_isSwappingQueue = false;
         }
-        m_pListHead = pNode->pNext;
-        m_pListHead->pPrev = NULL;
-        --m_dwNumberOfListNodes;
-        FreeNode(pNode);
+    }
+    if (m_isSwappingQueue)
+    {
+        m_pQueueDataBak->PopFront();
+    }
+    else
+    {
+        m_pQueueData->PopFront();
     }
 }
 
 void* CXQueue::Front()
 {
-    if (m_pListHead != NULL)
+    if (m_isSwappingQueue)
     {
-        return m_pListHead->pData;
+        return m_pQueueDataBak->Front();
     }
     else
     {
-        return NULL;
+        return m_pQueueData->Front();
     }
 }
 
-CXQueue::cx_list_node * CXQueue::GetNode()
+void* CXQueue::PopFront()
 {
-    if (!m_bInited)
+    if (m_bAutoCompactMemory)
     {
-        return NULL;
+        CompactMemory();
     }
-
-    cx_list_node *pObj = NULL;
-
-    if (m_pEmptyListHead != NULL)
+    if (m_isSwappingQueue)
     {
-        pObj = m_pEmptyListHead;
-        m_pEmptyListHead = m_pEmptyListHead->pNext;
-        if (m_pEmptyListHead == NULL)
+        if (m_pQueueDataBak->GetNumberOfUsingNodes() == 0)
         {
-            m_pEmptyListHead = NULL;
+            m_pQueueDataBak->Destroy();
+            m_isSwappingQueue = false;
         }
-        else
-        {
-            m_pEmptyListHead->pPrev = NULL;
-        }
+    }
+    if (m_isSwappingQueue)
+    {
+        return m_pQueueDataBak->PopFront();
     }
     else
     {
-        int iRet = AllocateMemoryBlock();
-        if (iRet == 0)
-        {
-            pObj = m_pEmptyListHead;
-            m_pEmptyListHead = m_pEmptyListHead->pNext;
-            m_pEmptyListHead->pPrev = NULL;
-        }
-        else
-        {
-            return NULL;
-        }
-
+        return m_pQueueData->PopFront();
     }
-    pObj->pNext = NULL;
-    pObj->pData = NULL;
-    pObj->pPrev = NULL;
-    --m_dwNumberOfEmptyNodes;
-    return pObj;
 }
 
-void CXQueue::FreeNode(void*pObjFree)
-{
-    if (!m_bInited)
-    {
-        return ;
-    }
-
-    if (pObjFree == NULL)
-        return;
-
-    cx_list_node *pObj = (cx_list_node *)pObjFree;
-    pObj->pNext = NULL;
-
-    if (m_pEmptyListEnd != NULL)
-    {
-        pObj->pPrev = m_pEmptyListEnd;
-        m_pEmptyListEnd->pNext = pObj;
-        m_pEmptyListEnd = pObj;
-    }
-    else
-    {
-        m_pEmptyListHead = m_pEmptyListHead = pObj;
-        pObj->pPrev = NULL;
-    }
-    ++m_dwNumberOfEmptyNodes;
-    return ;
-}
 
 void  CXQueue::Clear()
 {
-    if (m_pEmptyListHead == NULL)
+    m_pQueueDataBak->Clear();
+    m_pQueueData->Clear();
+    if (m_isSwappingQueue)
     {
-        m_pEmptyListHead = m_pListHead;
+        m_pQueueDataBak->Destroy();
+        m_isSwappingQueue = false;
     }
-    else
+}
+
+bool CXQueue::CompactMemory()
+{
+    if (!m_isSwappingQueue)
     {
-        m_pEmptyListEnd->pNext = m_pListHead;
-        m_pEmptyListEnd->pNext->pPrev = m_pEmptyListEnd;
+        if (m_pQueueData->GetNumberOfBlocks() >= 10
+            && m_pQueueDataBak->GetNumberOfUsingNodes() == 0)
+        {
+            // the number of the empty nodes is double that of using nodes
+            // swap the pointer of the m_pQueueData and m_pQueueDataBak
+            if ((m_pQueueData->GetNumberOfEmptyNodes() / m_pQueueData->GetNumberOfUsingNodes())>2)
+            {
+                CXQueueData *pTemp = m_pQueueData;
+                m_pQueueData = m_pQueueDataBak;
+                m_pQueueDataBak = pTemp;
+                m_isSwappingQueue = true;
+            }
+        }
     }
-    m_pEmptyListEnd = m_pListEnd;
-    m_pListHead = m_pListEnd = NULL;
-    m_dwNumberOfEmptyNodes += m_dwNumberOfListNodes;
-    m_dwNumberOfListNodes = 0;
+    return true;
 }

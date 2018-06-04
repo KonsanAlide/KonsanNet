@@ -34,7 +34,7 @@ int CXSessionMessageProcess::SessionLogin(PCXMessageData pMes, CXConnectionSessi
     int iRet = RETURN_SUCCEED;
     while (i-->0)
     {
-        PCXSessionLogin pPacket = (PCXSessionLogin)pMes->buf;
+        PCXSessionLogin pPacket = (PCXSessionLogin)pMes->bodyData.buf;
         if (pPacket->dwUserDataLen <= 0 || pPacket->dwUserDataLen >= (pMes->dwDataLen))
         {
             iRet = -3;

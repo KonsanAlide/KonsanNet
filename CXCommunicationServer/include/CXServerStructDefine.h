@@ -61,12 +61,13 @@ namespace CXCommunication
         //the sequence number of this buffer
         uint64 nSequenceNum;
 
+        _CX_BUFFER_OBJ * pNext;
+
         #define OP_ACCEPT  1
         #define OP_READ    2
         #define OP_WRITE   3
         int nOperate;
 
-        _CX_BUFFER_OBJ * pNext;
         char buf[BUF_SIZE];
     }CXBufferObj, *PCXBufferObj;
 

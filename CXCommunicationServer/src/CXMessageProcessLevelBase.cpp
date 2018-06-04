@@ -79,7 +79,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
 
                 if (pCon->GetSession() == NULL)
                 {
-                    if (pMes->dwMesCode != CX_SESSION_LOGIN_CODE)
+                    if (pMes->bodyData.dwMesCode != CX_SESSION_LOGIN_CODE)
                     {
                         printf("The first packet is not the login packet of the session\n");
                     }
@@ -105,7 +105,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
                 else
                 {
                     CXConnectionSession * pSession = (CXConnectionSession *)pCon->GetSession();
-                    DWORD dwMessageCode = pMes->dwMesCode;
+                    DWORD dwMessageCode = pMes->bodyData.dwMesCode;
                     switch (dwMessageCode)
                     {
                     case CX_SESSION_LOGIN_CODE:

@@ -360,9 +360,9 @@ namespace CXCommunication
         //build the header
         PCXPacketHeader pTcpHeader = (PCXPacketHeader)m_pbyRealSendBuffer;
         pTcpHeader->dwDataLen = iPacketBodyLen;
-        pTcpHeader->byReserve = 0x15;
-        pTcpHeader->byType = 2;
-        pTcpHeader->wFlag = 0x25f7;
+        pTcpHeader->byCompressFlag = 0;
+        pTcpHeader->byEncryptFlag = 0;
+        pTcpHeader->wFlag = CX_PACKET_HEADER_FLAG;
         pTcpHeader->dwCheckSum = dwCheckSum;
         pTcpHeader->dwOrignDataLen = dwOrignDataLen;
        
@@ -413,7 +413,7 @@ namespace CXCommunication
             return -4;
         }
 
-        if (header.wFlag != 0x25f7)
+        if (header.wFlag != CX_PACKET_HEADER_FLAG)
         {
             Close();
             return -5;

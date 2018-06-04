@@ -35,7 +35,7 @@ void TestSession()
 {
     CXClientConnectionSession session;
 
-    CXSocketAddress addr("192.168.0.108", 4355);
+    CXSocketAddress addr("192.168.0.104", 4355);
     session.SetRemoteAddress(addr);
     session.SetUserInfo("test", "123");
 
@@ -56,8 +56,12 @@ void TestSession()
         }
         memset(pData, '$', iPacketLen);
 
-        for (int i = 0; i<100000; i++)
+        for (int i = 0; i<1000; i++)
         {
+            if (i = 999)
+            {
+                int k = 0;
+            }
             int nSent = 0;
             int nRet = pMainChanel->SendPacket(pData, iPacketLen, 4001);
             if (nRet != 0)
@@ -73,7 +77,7 @@ void TestSession()
 void TestConection()
 {
     
-    CXSocketAddress addr("192.168.0.108", 4355);
+    CXSocketAddress addr("192.168.0.104", 4355);
 
     for (int i=0;i<1;i++)
     {
@@ -99,7 +103,7 @@ void TestConection()
         }
         else
         {
-            int iPacketLen = 100;
+            int iPacketLen = 4096;
             byte *pData = new byte[iPacketLen];
             if (pData == NULL)
             {
@@ -124,9 +128,9 @@ void TestConection()
 
 void *ThreadWork(void *pVoid)
 {
-    //ThreadReadFileTest(pVoid);
+    ThreadReadFileTest(pVoid);
     //TestConection();
-    TestSession();
+    //TestSession();
     return 0;
 }
 int main()
@@ -145,9 +149,14 @@ int main()
 
     CXThread workThread[1000];
     int i = 0;
-    for (i = 0;i<100;i++)
+    for (i = 0;i<1000;i++)
     {
         workThread[i].Start(ThreadWork,(void*)i);
+    }
+
+    for (i = 0; i<1000; i++)
+    {
+        workThread[i].Wait();
     }
 
 

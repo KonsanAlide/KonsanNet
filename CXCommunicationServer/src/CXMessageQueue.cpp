@@ -45,8 +45,7 @@ void* CXMessageQueue::GetMessage()
         void*pMes = NULL;
         if (m_queue.Size() > 0)
         {
-            pMes = m_queue.Front();
-            m_queue.Pop();
+            pMes = m_queue.PopFront();
         }
 
         m_lock.Unlock();

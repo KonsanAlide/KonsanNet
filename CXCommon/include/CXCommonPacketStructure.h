@@ -21,29 +21,23 @@ Description£ºThe structure of the data packet used in the common comnunication.
 
 #include "PlatformDataTypeDefine.h"
 
+#define CX_PACKET_HEADER_FLAG 0x25F7
 #pragma pack(1)
 
 #ifndef _CX_PACKET_HEADER
 typedef struct _CX_PACKET_HEADER
 {
     DWORD dwDataLen;
+    //check sum
     DWORD dwCheckSum;
+    //packet flag: CX_PACKET_HEADER_FLAG
     WORD  wFlag;
-    byte  byType;
-    byte  byReserve;
+    //compress data,if the first bit is 1, the packet is compressed,the left 7 bit is the compressed type
+    byte  byCompressFlag;
+    //encrypt data,if the first bit is 1, the packet is encrypted,the left 7 bit is the encrypted type
+    byte  byEncryptFlag;
     DWORD dwOrignDataLen;
 }CXPacketHeader, *PCXPacketHeader;
-#endif
-
-#ifndef _CX_MESSAGE_DATA
-typedef struct _CX_MESSAGE_DATA
-{
-    DWORD dwType;
-    DWORD dwDataLen;
-    DWORD dwMesCode;
-    void  *pConObj;
-    byte  buf[1];
-}CXMessageData, *PCXMessageData;
 #endif
 
 #ifndef _CX_PACKET_BODY_DATA
@@ -53,6 +47,16 @@ typedef struct _CX_PACKET_BODY_DATA
     DWORD dwPacketNum;
     byte  buf[1];
 }CXPacketBodyData, *PCXPacketBodyData;
+#endif
+
+#ifndef _CX_MESSAGE_DATA
+typedef struct _CX_MESSAGE_DATA
+{
+    DWORD dwType;
+    DWORD dwDataLen;
+    void  *pConObj;
+    CXPacketBodyData bodyData;
+}CXMessageData, *PCXMessageData;
 #endif
 
 #ifndef _CX_PACKET_DATA

@@ -59,9 +59,6 @@ namespace CXCommunication
             void   SetMemoryCache(CXMemoryCacheManager* pCache) { m_lpCacheObj = pCache; }
             CXMemoryCacheManager* GetMemoryCache() { return m_lpCacheObj; }
 
-            void   SetLargeBlockMemoryCache(CXMemoryCacheManager* pCache) { m_lpLargeBlockCacheObj = pCache; }
-            CXMemoryCacheManager* GetLargeBlockMemoryCache() { return m_lpLargeBlockCacheObj; }
-
             PCXBufferObj GetCXBufferObj(DWORD dwBufSize=sizeof(CXBufferObj));
             void FreeCXBufferObj(PCXBufferObj pBuf) { m_lpCacheObj->FreeBuffer(pBuf); }
 
@@ -92,8 +89,6 @@ namespace CXCommunication
             void AddProcessPacketNumber();
 
             uint64 GetNumberOfReceivedBufferInList() { return m_uiNumberOfReceivedBufferInList; }
-            void  AddReceivedBufferNumber();
-            void  ReduceReceivedBufferNumber();
 
             uint64 GetNumberOfReceivedPacketInQueue() { return m_uiNumberOfReceivedPacketInQueue; }
             void  AddReceivedPacketNumber();
@@ -131,6 +126,9 @@ namespace CXCommunication
             void SetDataParserHandle(CXDataParserImpl * handle) { m_pDataParserHandle = handle; }
             CXDataParserImpl *GetDataParserHandle() { return m_pDataParserHandle; }
 
+            void  LockRead();
+            void  UnlockRead();
+
         protected:
         private:
             cxsocket m_sock;
@@ -138,7 +136,7 @@ namespace CXCommunication
             //==2 minor messsage connection
             //==3 data connection
             //==4 object connection
-            int      m_iConnectionType;
+            int    m_iConnectionType;
 
             uint64 m_tmAcceptTime;
 
@@ -169,11 +167,10 @@ namespace CXCommunication
 
             // class object pointer, communication server
             void* m_lpServer;
-            CXMemoryCacheManager* m_lpCacheObj;
-            CXMemoryCacheManager* m_lpLargeBlockCacheObj;
 
-            // 使用计数
-            int  m_nUsedNumber;
+            // the pointer of the memory cache object
+            CXMemoryCacheManager* m_lpCacheObj;
+
 
             // the list header of the cache buffer list for receiving data
             PCXBufferObj m_pListReadBuf;

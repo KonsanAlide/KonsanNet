@@ -70,7 +70,7 @@ int main()
     server.Stop();
     threadCount.Wait();
     cout << "CXServer exit" << endl;
-    delete pUserMessageProcessHandle;
+    //delete pUserMessageProcessHandle;
 
     return 0;
 }
