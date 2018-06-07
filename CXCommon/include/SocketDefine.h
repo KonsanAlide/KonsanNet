@@ -20,7 +20,7 @@ Description£ºThis file contain the related definitions about the socket,
 #ifndef __CXSOCKETDEFINE_H__
 #define __CXSOCKETDEFINE_H__
 
-
+//#include <stdio.h>
 #ifdef WIN32
 
 #include <winsock2.h>
@@ -52,6 +52,24 @@ typedef int cxsocket;
 
 
 #endif //WIN32
+namespace CXCommunication
+{
+#ifndef ConnectionClosedType
+    //in some cases, the connection will be closed,
+    //the cases maybe: timeout,the peer closed,an error occurs ,and so on
+    typedef enum
+    {
+        //normal, not closed
+        NORMAL=0,
+        SERVER_EXIT,
+        TIME_OUT,
+        ILLEGAL_CONNECTION,
+        SOCKET_CLOSED,
+        ERROR_IN_PROCESS
+    }ConnectionClosedType;
+
+#endif
+}
 
 #endif //__CXSOCKETDEFINE_H__
 

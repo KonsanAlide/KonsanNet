@@ -120,11 +120,17 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
         return -5;
     }
 
-    if (m_socketServerKernel.Start(iListeningPort, iWaitThreadNum) != 0)
+    m_connectionsManager.SetClosedCallbackFun(CXCommunicationServer::OnClose);
+    if (!m_connectionsManager.StartDetectThread())
     {
-        cout << "Failed to start socket server" << endl;
         Stop();
         return -6;
+    }
+
+    if (m_socketServerKernel.Start(iListeningPort, iWaitThreadNum) != 0)
+    {
+        Stop();
+        return -7;
     }
     m_bRunning = true;
     return RETURN_SUCCEED;
@@ -133,6 +139,7 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
 int CXCommunicationServer::Stop()
 {
     m_socketServerKernel.Stop();
+    m_connectionsManager.Stop();
     m_dataDispathManager.Stop();
     for (int i = 0; i < m_lstMessageProcess.size(); i++)
     {
@@ -157,20 +164,22 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
 
     //printf_s("OnRecv1:Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d\n",
     //    dwTransDataOfBytes, (DWORD)pBufObj, pBufObj->nOperate);
-    
+
     CXCommunicationServer * pComServer = (CXCommunicationServer*)conObj.GetServer();
     if (pComServer == NULL)
     {
         return -1;
     }
     pComServer->AddReceivedBuffers();
-    
+
     //SetFileCompletionNotificationModes
+    ConnectionClosedType emClosedType = SOCKET_CLOSED;
     bool bNeedClose = false;
     int iRet = conObj.PostRecv(BUF_SIZE);
     if (iRet != 0)
     {
         bNeedClose = true;
+        emClosedType = SOCKET_CLOSED;
     }
     //conObj.FreeCXBufferObj(pBufObj);
     //return 0;
@@ -179,51 +188,72 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
     if (iRet != 0)
     {
         bNeedClose = true;
+        emClosedType = ERROR_IN_PROCESS;
     }
     if (!bNeedClose)
     {
-        if (conObj.GetState() >= 3)//closing
+        if (conObj.GetState() == CXConnectionObject::CLOSING)//closing
         {
             bNeedClose = true;
+        }
+        else if (conObj.GetState() >= CXConnectionObject::CLOSED)//closed
+        {
+            return RETURN_SUCCEED;
         }
     }
 
     if (bNeedClose)
     {
-        pComServer->CloseConnection(conObj);
+        if (conObj.GetState() >= CXConnectionObject::CLOSED)//closed
+        {
+            return RETURN_SUCCEED;
+        }
+        pComServer->CloseConnection(conObj, emClosedType);
     }
 
     return RETURN_SUCCEED;
 }
 
 //have beed locked by CXConnectionObject::lock
-int  CXCommunicationServer::OnClose(CXConnectionObject &conObj)
+int  CXCommunicationServer::OnClose(CXConnectionObject &conObj, ConnectionClosedType emClosedType)
 {
+    if (conObj.GetState() >= CXConnectionObject::CLOSED)//closed
+    {
+        return RETURN_SUCCEED;
+    }
     CXCommunicationServer * pComServer = (CXCommunicationServer*)conObj.GetServer();
-    pComServer->CloseConnection(conObj);
+    pComServer->CloseConnection(conObj, emClosedType);
 
     return RETURN_SUCCEED;
 }
 
-void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLockBySelf)
+void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, ConnectionClosedType emClosedType, bool bLockBySelf)
 {
     bool bFreeConnection = false;
 
     if(bLockBySelf)
-        conObj.LockRead();
+        conObj.Lock();
 
-    if (conObj.GetState() == 4)
+    //printf("Prepare to close connection ,connetcion id=%lld,connections=%lld,state:%d,post number=%lld,buffer in list=%lld,buffer in queue=%lld,emClosedType=%d\n",
+    //     conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber(), conObj.GetState(),
+    //    conObj.GetNumberOfPostBuffers(), conObj.GetNumberOfReceivedBufferInList(), conObj.GetNumberOfReceivedPacketInQueue(),emClosedType);
+
+    if (conObj.GetState() == CXConnectionObject::CLOSED)
     {
         if (bLockBySelf)
-            conObj.UnlockRead();
+            conObj.UnLock();
         return;
     }
-    if (conObj.GetState() ==1 || conObj.GetState()==2)
+    if (conObj.GetState() == CXConnectionObject::PENDING
+        || conObj.GetState()== CXConnectionObject::ESTABLISHED)
     {
 		GetSocketSeverKernel().DetachConnetionToModel(conObj);
-        conObj.Close();
     }
 
+
+    conObj.Close(false);
+
+    //conObj.LockRead();
     // if conObj.GetNumberOfPostBuffers() == 0 and conObj.GetNumberOfReceivedPacketInQueue() == 0
     // and the conObj.GetNumberOfReceivedBufferInList() !=0
     // there may be a situation that the left buffer contain one or more not complete packet,
@@ -232,7 +262,7 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLo
         && conObj.GetNumberOfPostBuffers() == 0
         && conObj.GetNumberOfReceivedPacketInQueue() == 0)
     {
-        conObj.SetState(4);
+        conObj.SetState(CXConnectionObject::CLOSED);
         m_connectionsManager.RemoveUsingConnection(&conObj);
 
         CXConnectionSession * pSession = (CXConnectionSession *)conObj.GetSession();
@@ -246,19 +276,19 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, bool bLo
                 m_sessionsManager.AddFreeSession(pSession);
             }
         }
-        
+
         bFreeConnection = true;
     }
     if (bLockBySelf)
-        conObj.UnlockRead();
-
+        conObj.UnLock();
     if (bFreeConnection)
     {
         // if the connection had been add to the free connections queue,and has been used by next socket connectcion.
         // but some thread are also using this pointer of this connection,
         // in this case , maybe some error occur.
         m_connectionsManager.AddFreeConnectionObj(&conObj);
-        //printf("connection close ,connetcion id=%lld,connections=%lld\n", conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber());
+        //printf("connection close ,connetcion id=%lld,connections=%lld,ClosedType=%d\n",
+        //    conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber(), emClosedType);
     }
 
 }
@@ -314,14 +344,14 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
             }
             if (bNeedClose)
             {
-                pComServer->CloseConnection(*pConObj);
+                pComServer->CloseConnection(*pConObj, SOCKET_CLOSED);
             }
 #endif
         }
         else
         {
             pConObj->Close();
-            pConObj->SetState(4);
+            pConObj->SetState(CXConnectionObject::CLOSED);
             //pComServer->CloseConnection(*pConObj);
             ConnectionsManager.AddFreeConnectionObj(pConObj);
             return -4;
@@ -333,7 +363,7 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
         if (pConObj!=NULL)
         {
             pConObj->Close();
-            pConObj->SetState(4);
+            pConObj->SetState(CXConnectionObject::CLOSED);
             ConnectionsManager.AddFreeConnectionObj(pConObj);
         }
 
@@ -369,15 +399,10 @@ int  CXCommunicationServer::OnProcessOnePacket(CXConnectionObject &conObj, PCXMe
     return RETURN_SUCCEED;
 }
 
-int  CXCommunicationServer::ParsePackets(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-    DWORD dwTransDataOfBytes)
-{
-    return RETURN_SUCCEED;
-}
-
 void CXCommunicationServer::AddReceivedBuffers()
 {
     m_lock.Lock();
     m_uiTotalReceiveBuffers++;
     m_lock.Unlock();
 }
+

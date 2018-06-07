@@ -29,7 +29,7 @@ namespace CXCommunication
     //typedef int (*POnWriteCallback)(CXConnectionObject &conObj,PCXBufferObj pBufObj,
     //    DWORD dwTransDataOfBytes);
     //have lock by CXConnectionObject::lock
-    typedef int (*POnClose)(CXConnectionObject& conObj);
+    typedef int (*POnClose)(CXConnectionObject& conObj, ConnectionClosedType emClosedType);
     typedef int(*POnAccept)(void *pServer, cxsocket sock,sockaddr_in &addrRemote);
 
     class CXSocketServerImpl
@@ -58,24 +58,11 @@ namespace CXCommunication
             void    SetServer(void *pServer) { m_pServer =pServer; }
             void *  GetServer() { return m_pServer; }
 
-
-            //virtual void CloseAndDisable(int sockid)=0;
-            //virtual bool Close()=0;
-
-/*
-            //have lock by PSocketObj::lock
-            static int  ReadDataCallback(PSocketObj pSock,char *pBuf,int nBufLen,int nFlags,int &nReadLen);
-            //have lock by PSocketObj::lock
-            static int  SendDataCallback(PSocketObj pSock,char *pBuf,int nBufLen,int nFlags,int &nSendLen);
-            static int  ParsePackets(PSocketObj pSock);
-*/
-            //have lock by PSocketObj::lock
-            //virtual int OnProcessPacketCallback(PSocketObj pSock,char *pPacketData,int nPacketLen)=0;
             virtual int OnAccept(void *pServer,cxsocket sock, sockaddr_in &addrRemote) = 0;
             virtual int OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,
                 DWORD dwTransDataOfBytes)=0;
             virtual int OnWrite(CXConnectionObject& conObj)=0;
-            virtual void OnClose(CXConnectionObject& conObj)=0;
+            virtual void OnClose(CXConnectionObject& conObj, ConnectionClosedType emClosedType)=0;
 
         protected:
     };

@@ -144,6 +144,8 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
     {
         return -2;
     }
+
+    m_cmmClient.SendHeartPacket();
   
     byte *pData = m_byPacketData;
     memset(pData, 0, CLIENT_BUF_SIZE);
@@ -219,6 +221,8 @@ int  CXFileTcpClient::Write(const byte* pBuf, int iBufLen, int *piWrittenLen)
     {
         return -2;
     }
+
+    m_cmmClient.SendHeartPacket();
 
     DWORD dwBufferSize = 0;
     byte *pData = m_dataClient.GetSendBuffer(dwBufferSize);

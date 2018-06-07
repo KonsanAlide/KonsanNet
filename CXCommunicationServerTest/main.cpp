@@ -28,9 +28,9 @@ void* ThreadCount(void* lpvoid)
         //uint64 uiConnectionNumber = server.GetConnectionManager().GetTotalConnectionsNumber();
         uint64 uiConnectionNumber = server.GetTotalConnectionsNumber();
         uint64 uiIONumber = server.GetTotalReceiveBuffers();
-        printf("The number of the connections received in one second is : %I64i .\n",
+        printf("The number of the connections received in one second is : %lld .\n",
             uiConnectionNumber - uiLastConnectionNumber);
-        printf("The number of the io received in one second is : %I64i .\n",
+        printf("The number of the io received in one second is : %lld .\n",
             uiIONumber - uiLastIONumber);
         uiLastConnectionNumber = uiConnectionNumber;
         uiLastIONumber = uiIONumber;

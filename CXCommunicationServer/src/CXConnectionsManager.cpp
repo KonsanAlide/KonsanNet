@@ -16,12 +16,19 @@ limitations under the License.
 Description£º
 *****************************************************************************/
 #include "CXConnectionsManager.h"
+#include <time.h>
+#ifndef WIN32
+#include<sys/time.h>
+#endif
+
+void* ThreadDetect(void* lpvoid);
 namespace CXCommunication
 {
     CXConnectionsManager::CXConnectionsManager()
     {
-        //m_queueFreeConnections
         m_uiCurrentConnectionIndex = 0;
+        m_pfOnClose = NULL;
+        m_bStarted = false;
     }
 
     CXConnectionsManager::~CXConnectionsManager()
@@ -69,6 +76,7 @@ namespace CXCommunication
             m_queueFreeConnections.pop();
         }
         m_lockFreeConnections.Unlock();
+        pObj->SetState(CXConnectionObject::INITIALIZED);
         return pObj;
     }
 
@@ -206,4 +214,124 @@ namespace CXCommunication
         return m_mapUsingConnections.size();
     }
 
+    //the thread used to detect the timeout event of the connections
+    //contain the process of the pending connections
+    bool CXConnectionsManager::DetectConnections()
+    {
+        uint64 iIndex = 0;
+        while (m_bStarted)
+        {
+            m_eveWaitDetect.WaitForSingleObject(50);
+            iIndex++;
+#ifdef WIN32
+            uint64 uiCurTime = GetTickCount64();
+#else
+            struct timeval tv;
+            gettimeofday(&tv, NULL);
+            uint64 uiCurTime = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+#endif
+            queue<CXConnectionObject *> queueTimeOutConnections;
+            m_lockUsingConnections.Lock();
+            unordered_map<uint64, CXConnectionObject *>::iterator it;
+            it = m_mapUsingConnections.begin();
+            for (; it != m_mapUsingConnections.end(); ++it)
+            {
+                CXConnectionObject * pCon = it->second;
+                if (pCon->GetTimeOutMSeconds() != 0xffffffff)
+                {
+                    if (pCon->GetState() < CXConnectionObject::CLOSING)
+                    {
+                        if (pCon->GetLastPacketTime() == 0)
+                        {
+                            if (uiCurTime>pCon->GetAcceptedTime())
+                            {
+                                if (uiCurTime - pCon->GetAcceptedTime() > (pCon->GetTimeOutMSeconds() * 2))
+                                {
+                                    queueTimeOutConnections.push(pCon);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (uiCurTime>pCon->GetLastPacketTime())
+                            {
+                                if (uiCurTime - pCon->GetLastPacketTime() > (pCon->GetTimeOutMSeconds() * 2))
+                                {
+                                    queueTimeOutConnections.push(pCon);
+                                }
+                            }
+                        }
+                    }
+                    else if (iIndex % 10 == 0) //clear the time out connections
+                    {
+                        uint64 nTimeSpec = 0;
+                        if (pCon->GetLastPacketTime() == 0)
+                        {
+                            if (uiCurTime > pCon->GetAcceptedTime())
+                            {
+                                nTimeSpec = uiCurTime - pCon->GetAcceptedTime();
+                            }
+                        }
+                        else if (uiCurTime > pCon->GetLastPacketTime())
+                        {
+                            nTimeSpec = uiCurTime - pCon->GetLastPacketTime();
+                        }
+
+                        if (nTimeSpec > 0 && nTimeSpec > (pCon->GetTimeOutMSeconds() * 2))
+                        {
+                            queueTimeOutConnections.push(pCon);
+                        }
+                    }
+                }
+            }
+
+            m_lockUsingConnections.Unlock();
+
+            while (queueTimeOutConnections.size() > 0)
+            {
+                CXConnectionObject * pCon = queueTimeOutConnections.front();
+                queueTimeOutConnections.pop();
+                if (m_pfOnClose != NULL)
+                {
+                    m_pfOnClose(*pCon, TIME_OUT);
+                }
+            }
+        }
+        return true;
+    }
+
+    void* ThreadDetect(void* lpvoid)
+    {
+        CXConnectionsManager * pServer = (CXConnectionsManager*)lpvoid;
+        bool bRet = pServer->DetectConnections();
+        if (bRet)
+            return 0;
+        else
+            return (void*)(-1);
+    }
+
+    // start the detected thread
+    bool CXConnectionsManager::StartDetectThread()
+    {
+        m_bStarted = true;
+        int iRet = m_threadTimeOutDetect.Start(ThreadDetect,this);
+        if (iRet != 0)
+        {
+            m_bStarted = false;
+            return false;
+        }
+        return true;
+    }
+    // start the detected thread
+    void CXConnectionsManager::Stop()
+    {
+        if (m_bStarted)
+        {
+            m_bStarted = false;
+            m_eveWaitDetect.SetEvent();
+            m_threadTimeOutDetect.Wait();
+        }
+    }
+
 }
+

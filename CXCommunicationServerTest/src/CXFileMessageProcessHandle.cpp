@@ -56,6 +56,18 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
     CXFile64 *pFile = NULL;
     switch (dwMessageCode)
     {
+    case CX_HEAERT_BEAT_CODE:
+    {
+        PCXCommonMessageReply pReply = (PCXCommonMessageReply)bySendBuf;
+        pReply->dwReplyCode = 200;
+        dwSendMesLen = sizeof(CXCommonMessageReply);
+        bool bRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_HEAERT_BEAT_REPLY_CODE);
+        if (!bRet)
+        {
+            return -2;
+        }
+        break;
+    }
     case CX_FILE_OPEN_CODE:
     {
         PCXCommonMessageReply pReply = (PCXCommonMessageReply)bySendBuf;

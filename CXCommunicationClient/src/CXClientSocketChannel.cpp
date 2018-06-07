@@ -207,3 +207,41 @@ int CXClientSocketChannel::Login(const string &strUserName, const string &strPas
 
     return RETURN_SUCCEED;
 }
+
+int CXClientSocketChannel::SendHeartPacket()
+{
+    int iRet = RETURN_SUCCEED;
+
+
+    DWORD dwBufSize = 0;
+    byte byMessageData[CLIENT_BUF_SIZE] = { 0 };
+    byte *pData = byMessageData;
+
+    memset(pData, 0, dwBufSize);
+
+    int iMesLen = 0;
+
+    int iTransDataLen = 0;
+    int iTransRet = SendPacket(pData, iMesLen, CX_HEAERT_BEAT_CODE);
+    if (iTransRet != 0)
+    {
+        Close();
+        return -3;
+    }
+    memset(pData, 0, CLIENT_BUF_SIZE);
+    DWORD dwMesCode = 0;
+    iTransRet = RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen, dwMesCode);
+    if (iTransRet != 0)
+    {
+        Close();
+        return -4;
+    }
+
+    if (dwMesCode != CX_HEAERT_BEAT_REPLY_CODE)
+    {
+        Close();
+        return -5;
+    }
+
+    return RETURN_SUCCEED;
+}

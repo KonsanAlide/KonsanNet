@@ -22,12 +22,8 @@ Description£º
 #include "SocketDefine.h"
 #include "CXSpinLock.h"
 #include "CXServerStructDefine.h"
-//#include "CXMemoryCache.h"
 #include "CXMemoryCacheManager.h"
 #include "CXCommonPacketStructure.h"
-#ifdef WIN32
-#include <atomic>
-#endif
 #include "CXMutexLock.h"
 #include "CXLog.h"
 #include "CXDataParserImpl.h"
@@ -40,6 +36,21 @@ namespace CXCommunication
     class CXConnectionObject
     {
         public:
+            enum CONNECTION_STATE
+            {
+                //not accepted a socket
+                INITIALIZED=0,
+                //accepted a socket,but need to check the effectiveness of the source
+                PENDING,
+                //accepted the socket, and the source is effective, and allowed to receive and send data
+                ESTABLISHED,
+                //the connection is closing, the socket had been closed,this socket can not receive or send any data,
+                //the received data is in process.
+                CLOSING,
+                //all the receive data had been processed, this connection had been freed
+                CLOSED
+            };
+        public:
             CXConnectionObject();
             virtual ~CXConnectionObject();
             void Reset();
@@ -48,10 +59,10 @@ namespace CXCommunication
             void Build(cxsocket sock,uint64 uiConnIndex,sockaddr_in addr);
             void RecordCurrentPacketTime();
 
-            uint64 GetLastPacketTime(){return m_tmLastPacketTime;}
-            uint64 GetAcceptedTime(){return m_tmAcceptTime;}
+            uint64   GetLastPacketTime(){return m_tmLastPacketTime;}
+            uint64   GetAcceptedTime(){return m_tmAcceptTime;}
             cxsocket GetSocket(){return m_sock;}
-            void SetConnectionIndex(int iIndex) { m_uiConnectionIndex=iIndex; }
+            void   SetConnectionIndex(int iIndex) { m_uiConnectionIndex=iIndex; }
             uint64 GetConnectionIndex(){return m_uiConnectionIndex;}
             void   SetServer(void* pServer) { m_lpServer = pServer; }
             void*  GetServer() { return m_lpServer; }
@@ -65,11 +76,13 @@ namespace CXCommunication
             void* GetBuffer(DWORD dwBufSize) { return m_lpCacheObj->GetBuffer(dwBufSize); }
             void  FreeBuffer(void* pBuf) { m_lpCacheObj->FreeBuffer(pBuf); }
 
-            //
-            int    RecvPacket(PCXBufferObj pBufObj,DWORD dwTransDataOfBytes);
+            //parse the received data in the buffer list, make up a complete packet of some data fragments
+            int    RecvPacket(PCXBufferObj pBufObj,DWORD dwTransDataOfBytes,bool bLockBySelf = true);
 
+            //verify the check sum of the message data
             bool   VerifyPacketBodyData(PCXPacketHeader pHeader,byte *pData);
 
+            //post the message data to the user's message process level
             static int  OnProcessOnePacket(CXConnectionObject &conObj, PCXMessageData pMes);
 
             void  SetProcessOnePacketFun(POnProcessOnePacket pfn) { m_pfnProcessOnePacket= pfn; }
@@ -98,10 +111,10 @@ namespace CXCommunication
 
             uint64 GetNumberOfPostBuffers() { return m_uiNumberOfPostBuffers; }
 
-            void SetState(int iState) { m_nState=iState; }
-            int  GetState() { return m_nState; }
+            void SetState(CONNECTION_STATE emState) { m_nState= emState; }
+            CONNECTION_STATE GetState() { return m_nState; }
 
-            void Close();
+            void Close(bool bLockBySelf = true);
 
             void SetConnectionType(int iType) { m_iConnectionType=iType; }
             int  GetConnectionType() { return m_iConnectionType; }
@@ -122,12 +135,14 @@ namespace CXCommunication
             bool  SendPacket(const byte* pbData,DWORD dwLen,DWORD dwMesCode, bool bLockBySelf = true);
             void  LockSend();
             void  UnlockSend();
-            
+
             void SetDataParserHandle(CXDataParserImpl * handle) { m_pDataParserHandle = handle; }
             CXDataParserImpl *GetDataParserHandle() { return m_pDataParserHandle; }
 
             void  LockRead();
             void  UnlockRead();
+
+            DWORD GetTimeOutMSeconds() { return m_dwTimeOutMSeconds; }
 
         protected:
         private:
@@ -142,14 +157,9 @@ namespace CXCommunication
 
             uint64 m_uiConnectionIndex;
 
-#ifdef atomic
-            atomic<uint64> m_uiRecvBufferIndex;
-            atomic<uint64> m_uiSendBufferIndex;
-#else
             uint64 m_uiRecvBufferIndex;
             uint64 m_uiSendBufferIndex;
 
-#endif
             uint64 m_uiLastProcessBufferIndex;
 
             //==0 initialize
@@ -157,7 +167,7 @@ namespace CXCommunication
             //==2 recv data packets
             //==3 closing
             //==4 closed
-            int    m_nState;
+            CONNECTION_STATE  m_nState;
 
             //last packet time
             uint64  m_tmLastPacketTime;
@@ -197,17 +207,6 @@ namespace CXCommunication
             // the index of the queue in the CXDataDispathLevelImpl object
             int m_iDispacherQueueIndex;
 
-#ifdef WIN32
-            // the number of the received buffers in the receiving buffer list
-            atomic<uint64> m_uiNumberOfReceivedBufferInList;
-
-            // the number of the received packets in the message queue
-            atomic<uint64> m_uiNumberOfReceivedPacketInQueue;
-
-            // the number of the buffer by posting to iocp model
-            atomic<uint64> m_uiNumberOfPostBuffers;
-            atomic<uint64> m_iProcessPacketNumber;
-#else
             // the number of the received buffers in the receiving buffer list
             uint64 m_uiNumberOfReceivedBufferInList;
 
@@ -219,13 +218,15 @@ namespace CXCommunication
 
             uint64 m_iProcessPacketNumber;
 
-#endif
-
             void * m_pSessionsManager;
             void * m_pSession;
 
             CXLog *m_pLogHandle;
             CXDataParserImpl *m_pDataParserHandle;
+
+            //the milliseconds of the connections timeout value
+            //if the value is 0xffffffff, the connection will be not time out, the value show that the time is infinite
+            DWORD  m_dwTimeOutMSeconds;
     };
 
 }

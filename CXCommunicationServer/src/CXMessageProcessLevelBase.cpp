@@ -65,7 +65,8 @@ int CXMessageProcessLevelBase::ProcessMessage()
     CXMessageQueue * pQueue = GetMessageQueue();
     while (IsStart())
     {
-        if (pQueue->Wait(1000) == WAIT_OBJECT_0)
+        pQueue->Wait(1000);
+        //if (pQueue->Wait(1000) == WAIT_OBJECT_0)
         {
             iLoopNum = 0;
             PCXMessageData pMes = (PCXMessageData)pQueue->GetMessage();
@@ -124,7 +125,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
                         }
                         break;
                     case CX_SESSION_SETITING_CODE:
-                        
+
                         iRet = m_pSessionLevelProcess->SessionSetting(pMes, *pSession);
                         if (iRet != RETURN_SUCCEED)
                         {
@@ -161,14 +162,23 @@ int CXMessageProcessLevelBase::ProcessMessage()
 
                 //<Process the closing event of this socket>
                 //pCon->Lock();
-                pCon->ReduceReceivedPacketNumber();
-                if (pCon->GetState() >= 3)//closing
+                if (pCon->GetState() >= CXConnectionObject::CLOSING)//closing
                 {
-                    //ProcessConnectionError(pCon);
-                    CXCommunicationServer *pServer = (CXCommunicationServer *)pCon->GetServer();
-                    pServer->CloseConnection(*pCon);
+                    pCon->Lock();
+                    pCon->ReduceReceivedPacketNumber();
+                    if (pCon->GetState() == CXConnectionObject::CLOSING)//closed
+                    {
+                        //ProcessConnectionError(pCon);
+                        CXCommunicationServer *pServer = (CXCommunicationServer *)pCon->GetServer();
+                        pServer->CloseConnection(*pCon, SOCKET_CLOSED,false);
+                    }
+                    pCon->UnLock();
                 }
-                //pCon->UnLock();
+                else
+                {
+                    pCon->ReduceReceivedPacketNumber();
+                }
+
 
                 pMes = (PCXMessageData)pQueue->GetMessage();
                 /*
@@ -204,6 +214,6 @@ int CXMessageProcessLevelBase::ProcessConnectionError(CXConnectionObject * pCon)
 {
     CXCommunicationServer *pServer = (CXCommunicationServer *)pCon->GetServer();
     CXConnectionsManager & connectionsManager = pServer->GetConnectionManager();
-    pServer->CloseConnection(*pCon,false);
+    pServer->CloseConnection(*pCon, ERROR_IN_PROCESS,false);
     return 0;
 }

@@ -61,7 +61,7 @@ DWORD CXEvent::WaitForSingleObject(DWORD dwMilliseconds)
 
     struct timespec timerWait;
     timerWait.tv_sec = time(NULL) + dwMilliseconds / 1000;
-    timerWait.tv_nsec = dwMilliseconds % 1000;
+    timerWait.tv_nsec = (dwMilliseconds%1000) * 1000000;
     pthread_mutex_lock(&m_mutexEvent);
     int nRet = pthread_cond_timedwait(&m_condEvent, &m_mutexEvent, &timerWait);
     pthread_mutex_unlock(&m_mutexEvent);

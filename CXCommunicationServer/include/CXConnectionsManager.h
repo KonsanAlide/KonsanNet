@@ -41,14 +41,17 @@ using namespace std;
 #include <map>
 #include <queue>
 #include "CXSpinLock.h"
-
+#include "CXThread.h"
+#include "CXEvent.h"
+#include "SocketDefine.h"
 using namespace std;
-
 
 namespace CXCommunication
 {
     class CXConnectionsManager
     {
+        typedef int(*POnClose)(CXConnectionObject& conObj,ConnectionClosedType emClosedType);
+
         public:
             CXConnectionsManager();
             virtual ~CXConnectionsManager();
@@ -66,6 +69,17 @@ namespace CXCommunication
             void Destroy();
             uint64 GetTotalConnectionsNumber();
 
+            //the thread used to detect the timeout event of the connections
+            //contain the process of the pending connections
+            bool DetectConnections();
+
+            void SetClosedCallbackFun(POnClose pfun) { m_pfOnClose= pfun; }
+
+            // start the detected thread
+            bool StartDetectThread();
+
+            void Stop();
+
         protected:
         private:
             unordered_map<uint64, CXConnectionObject *> m_mapPendingConnections;
@@ -75,6 +89,14 @@ namespace CXCommunication
             CXSpinLock m_lockFreeConnections;
             CXSpinLock m_lockUsingConnections;
             CXSpinLock m_lockPendingConnections;
+
+            //the thread used to detect the timeout event of the connections
+            //contain the process of the pending connections
+            CXThread              m_threadTimeOutDetect;
+            //the closed event process function in the CXCommunicationServer class 
+            POnClose              m_pfOnClose;
+            CXEvent               m_eveWaitDetect;
+            bool      m_bStarted;
 
     };
 }

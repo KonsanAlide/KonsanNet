@@ -20,7 +20,7 @@ Description£º
 
 #include "SocketDefine.h"
 #include "CXEvent.h"
-#include "CXThread.h" 
+#include "CXThread.h"
 #include "CXSocketServerKernel.h"
 #include "CXConnectionsManager.h"
 #include "CXDataDispathLevelImpl.h"
@@ -49,19 +49,16 @@ namespace CXCommunication
         int Start(unsigned short iListeningPort, int iWaitThreadNum);
         int Stop();
 
-        //have beed locked by CXConnectionObject::lock
         static int  OnRecv(CXConnectionObject &conObj, PCXBufferObj pBufObj,
             DWORD dwTransDataOfBytes);
 
-        //have beed locked by CXConnectionObject::lock
-        static int  OnClose(CXConnectionObject &conObj);
+        static int  OnClose(CXConnectionObject &conObj,ConnectionClosedType emClosedType);
 
-        //have beed locked by CXConnectionObject::lock
         static int  OnAccept(void *pServer, cxsocket sock, sockaddr_in &addrRemote);
 
-        //have beed locked by CXConnectionObject::lock
         static int  OnWrite(CXConnectionObject &conObj);
 
+        //push a message to the message queue
         static int  OnProcessOnePacket(CXConnectionObject &conObj, PCXMessageData pMes);
 
         CXSocketServerKernel &GetSocketSeverKernel() { return m_socketServerKernel; }
@@ -69,7 +66,7 @@ namespace CXCommunication
         CXMemoryCacheManager &GetMemoryCacheManger() { return m_memoryCacheManager; }
         CXDataDispathLevelImpl &GetDataDispathManger() { return m_dataDispathManager; }
 
-        void CloseConnection(CXConnectionObject &conObj,bool bLockBySelf=true);
+        void CloseConnection(CXConnectionObject &conObj, ConnectionClosedType emClosedType,bool bLockBySelf=true);
 
         CXSessionsManager &  GetSessionsManager() { return m_sessionsManager; }
 
@@ -89,11 +86,6 @@ namespace CXCommunication
         void SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
         CXLog *GetLogHandle() { return m_pLogHandle; }
 
-    public:
-            
-    protected:
-        int  ParsePackets(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-            DWORD dwTransDataOfBytes);
 
     private:
         bool m_bRunning;
@@ -102,7 +94,11 @@ namespace CXCommunication
         CXMemoryCacheManager m_memoryCacheManager;
         CXDataDispathLevelImpl m_dataDispathManager;
         CXSessionsManager    m_sessionsManager;
+
+        // the list of the message process object
+        // the message process object has a message process thread ,waiting for the message queue object
         list<void*> m_lstMessageProcess;
+
         CXSpinLock m_lock;
         uint64 m_uiTotalReceiveBuffers;
         CXDataParserImpl *m_pDataParserHandle;
@@ -110,7 +106,6 @@ namespace CXCommunication
         CXSessionLevelBase   *m_pSessionMessageProcessHandle;
         CXLog                *m_pLogHandle;
         CXNetworkInitEnv      m_networkInit;
-
     };
 }
 

@@ -45,10 +45,6 @@ namespace CXCommunication
 
             list<CXThread*>m_lstWaitThreads;
 
-            //CConnectionList m_connectionManager;
-            //CKDataTransmitManagement *m_pDataTransmitManager;
-            CXEvent m_eveWaitDetect;
-
             CXLog   *m_pLogHandle;
 
     public:
@@ -61,25 +57,16 @@ namespace CXCommunication
             virtual int Start(unsigned short iListeningPort,int iWaitThreadNum);
             virtual int Stop();
 
-            //virtual void CloseAndDisable(int sockid)=0;
-            //virtual bool Close()=0;
-
-
-            //have lock by PSocketObj::lock
-            //virtual int OnProcessPacketCallback(PSocketObj pSock,char *pPacketData,int nPacketLen)=0;
             virtual int OnAccept(void *pServer, cxsocket sock, sockaddr_in &addrRemote);
             virtual int OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,
                 DWORD dwTransDataOfBytes);
             virtual int OnWrite(CXConnectionObject& conObj);
-            virtual void OnClose(CXConnectionObject& conObj);
+            virtual void OnClose(CXConnectionObject& conObj, ConnectionClosedType emClosedType);
 
             bool SetNonblocking(int sock);
 
             int  WaitThread();
             int  ListenThread();
-            bool DetectConnections();
-            bool WaitThreadsExit();
-
 
             int  AttachConnetionToModel(CXConnectionObject &conObj);
             int  DetachConnetionToModel(CXConnectionObject &conObj);
@@ -103,11 +90,6 @@ namespace CXCommunication
             int ProcessEpollEvent(CXConnectionObject& conObj);
 #endif
         protected:
-
-        private:
-            //static void* ThreadListen(void* lpvoid);
-            //static void* ThreadWork(void* lpvoid);
-            static void* ThreadDetectConnection(void* lpvoid);
 
     };
 }

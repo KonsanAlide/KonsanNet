@@ -65,6 +65,8 @@ namespace CXCommunication
             int iUserType = 1, int iSessionType = 1,
             string strSessionGuid = "", string strVerifyCode = "");
 
+        int SendHeartPacket();
+
 
     private:
         ChannelType m_channelType;

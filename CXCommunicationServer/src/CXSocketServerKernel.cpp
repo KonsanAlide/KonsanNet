@@ -13,7 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-Description：
+Description:
 *****************************************************************************/
 #ifdef WIN32
 #include<ws2tcpip.h>
@@ -79,6 +79,15 @@ int CXSocketServerKernel::CreateTcpListenPort(cxsocket & sock,
         cout << "Failed to creat listen socket" << endl;
         return -2;
     }
+    #ifndef WIN32
+    int iValue=1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&iValue, sizeof(iValue))==-1)
+        return -4;
+
+    if (-1 == setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &iValue, sizeof(iValue))) {
+        return -5;
+    }
+    #endif // WIN32
 
     int nRet = bind(sock, (sockaddr*)&sockLocal, nAddrLen);
     if (nRet == -1)
@@ -158,7 +167,7 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
         catch (const bad_alloc& e)
         {
             bCreateThread = false;
-            cout << "CXSocketServerKernel create epoll wait thread fails, allocate memory failed" << endl;
+            printf("Failed to start socket server kernel, allocate memory failed \n");
             pWaitThread = NULL;
         }
 
@@ -168,7 +177,7 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
             iRet = pWaitThread->Start(funThread, (void*)this);
             if (iRet != 0)
             {
-                cout << "CXSocketServerKernel create epoll wait thread fails" << endl;
+                printf("Failed to start socket server kernel, create waitting thread fails \n");
                 bCreateThread = false;
             }
         }
@@ -253,14 +262,13 @@ int CXSocketServerKernel::OnWrite(CXConnectionObject& conObj)
     return RETURN_SUCCEED;
 }
 
-void CXSocketServerKernel::OnClose(CXConnectionObject& conObj)
+void CXSocketServerKernel::OnClose(CXConnectionObject& conObj, ConnectionClosedType emClosedType)
 {
 
 }
 
 bool CXSocketServerKernel::SetNonblocking(int sock)
 {
-    int opts;
 #ifdef WIN32
     unsigned long iNonblocking =  1;
     if (ioctlsocket(sock, FIONBIO, (unsigned long*)&iNonblocking) == SOCKET_ERROR)
@@ -270,6 +278,7 @@ bool CXSocketServerKernel::SetNonblocking(int sock)
 
 
 #else //WIN32
+    int opts;
     opts = fcntl(sock, F_GETFL);
     if (opts<0)
     {
@@ -302,13 +311,6 @@ void* ThreadWork(void* lpvoid)
 }
 
 
-bool CXSocketServerKernel::WaitThreadsExit()
-{
-    m_threadListen.Wait();
-    return true;
-}
-
-
 int CXSocketServerKernel::ListenThread()
 {
     struct sockaddr_in sockRemote;
@@ -322,7 +324,7 @@ int CXSocketServerKernel::ListenThread()
         cxsocket sockAccept = accept(m_sockListen,(sockaddr *)&sockRemote, &nAddrLen);
         if(sockAccept ==-1)
         {
-            cout<<"Failed to accept a connection the socket in port "<<m_nListeningPort<<endl;
+            printf("Failed to accept a connection the socket in port \n");
             closesocket(m_sockListen);
             return 0;
         }
@@ -437,6 +439,21 @@ int  CXSocketServerKernel::WaitThread()
             else if(events[i].events & EPOLLOUT) // 如果有数据发送
             {
             }
+
+            if(events[i].events & EPOLLERR || events[i].events & EPOLLHUP)
+            {
+                pConObj = (CXConnectionObject*)(events[i].data.ptr);
+                printf("A error occur , connection id=%lld \n",pConObj->GetConnectionIndex());
+                if (m_pfOnClose != NULL)
+                {
+                    m_pfOnClose(*pConObj, SOCKET_CLOSED);
+                }
+                else
+                {
+                    this->OnClose(*pConObj, SOCKET_CLOSED);
+                }
+            }
+
         }
 #endif // WIN32
     }
@@ -481,11 +498,11 @@ BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LP
 
             if (m_pfOnClose != NULL)
             {
-                m_pfOnClose(conObj);
+                m_pfOnClose(conObj, SOCKET_CLOSED);
             }
             else
             {
-                this->OnClose(conObj);
+                this->OnClose(conObj, SOCKET_CLOSED);
             }
         }
         else //unknown exception
@@ -533,7 +550,7 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
     else
     {
         sprintf_s(szInfo, 1024, "Error Packet : receive a error packet, pBufObj = %x, pBufObj->nOperate = %d, pBufObj->nSequenceNum = %I64i, free buffer\n",
-            (DWORD)pBufObj, pBufObj->nOperate, pBufObj->nSequenceNum);
+            (void*)pBufObj, pBufObj->nOperate, pBufObj->nSequenceNum);
         m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
         printf_s(szInfo);
         conObj.FreeCXBufferObj(pBufObj);
@@ -554,7 +571,7 @@ int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
     while (nRet >= 0)
     {
         DWORD  dwReadLen = 0;
-        //need to lock
+
         PCXBufferObj pBufObj=NULL;
         nRet = conObj.RecvData(&pBufObj,dwReadLen);
         if (dwReadLen>0)
@@ -568,39 +585,22 @@ int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
                 OnRead(conObj, pBufObj, dwReadLen);
             }
         }
-        //need to unlock
 
-        if (nRet == -3) // socket had been closed by peer
+        // socket had been closed by peer
+        // some error or connection had been closed
+        if (nRet == -3 || nRet == -2)
         {
-            if (pBufObj)
-                conObj.FreeBuffer(pBufObj);
             if (m_pfOnClose != NULL)
             {
-                m_pfOnClose(conObj);
+                m_pfOnClose(conObj, SOCKET_CLOSED);
             }
             else
             {
-                OnClose(conObj);
+                OnClose(conObj, SOCKET_CLOSED);
             }
         }
         else if (nRet == -1)//read to end
         {
-            if (pBufObj && dwReadLen==0)
-                conObj.FreeBuffer(pBufObj);
-            break;
-        }
-        else if (nRet == -2) //some error or connection had been closed
-        {
-            if (pBufObj)
-                conObj.FreeBuffer(pBufObj);
-            if (m_pfOnClose != NULL)
-            {
-                m_pfOnClose(conObj);
-            }
-            else
-            {
-                OnClose(conObj);
-            }
             break;
         }
     }
@@ -658,6 +658,7 @@ BOOL CXSocketServerKernel::PostAccept(PCXBufferObj pBufObj)
 
 int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
 {
+
 #ifdef WIN32
     HANDLE hRet = ::CreateIoCompletionPort((HANDLE)conObj.GetSocket(), m_iocpHandle, (ULONG_PTR)&conObj, 0);
     if (hRet == NULL)
@@ -674,7 +675,7 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
     struct epoll_event ev;
     //ev.events=EPOLLIN |EPOLLOUT | EPOLLET;
     //ev.events=EPOLLIN;
-    ev.events = EPOLLIN | EPOLLET;
+    ev.events = EPOLLIN | EPOLLET| EPOLLERR | EPOLLHUP;
     ev.data.ptr = (void*)&conObj;
     if (-1 == epoll_ctl(m_epollHandle, EPOLL_CTL_ADD, conObj.GetSocket(), &ev))
     {
@@ -689,6 +690,7 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
 
 int  CXSocketServerKernel::DetachConnetionToModel(CXConnectionObject &conObj)
 {
+    //printf("Detach connection from socket model,connection id=%lld\n", conObj.GetConnectionIndex());
 #ifdef WIN32
 
 #else
@@ -696,12 +698,13 @@ int  CXSocketServerKernel::DetachConnetionToModel(CXConnectionObject &conObj)
     struct epoll_event ev;
     //ev.events=EPOLLIN |EPOLLOUT | EPOLLET;
     //ev.events=EPOLLIN;
-    ev.events = EPOLLIN | EPOLLET;
+    ev.events = EPOLLIN | EPOLLET| EPOLLERR | EPOLLHUP;
     ev.data.ptr = (void*)&conObj;
     if (-1 == epoll_ctl(m_epollHandle, EPOLL_CTL_DEL, conObj.GetSocket(), &ev))
     {
         //closesocket(conObj.GetSocket());
-        //cout << "Failed to add the new connection socket to the epoll model" << endl;
+        printf("Failed to add the new connection socket to the epoll model,errno=%d,error=%s", errno, strerror(errno));
+
         return -1;
     }
 #endif // WIN32
