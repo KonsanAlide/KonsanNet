@@ -1,5 +1,5 @@
 /****************************************************************************
-Copyright (c) 2018 Chance Yang
+Copyright (c) 2018-2019 Charles Yang
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,16 +15,33 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#pragma once
+#ifndef __CXGUIDOBJECT_H__
+#define __CXGUIDOBJECT_H__
+
+#include "PlatformDataTypeDefine.h"
 #include <string>
-using std::string;
-class CXFileTcpClientTest
+using namespace std;
+class CXGuidObject
 {
 public:
-    CXFileTcpClientTest();
-    ~CXFileTcpClientTest();
+	CXGuidObject(bool bGenerateGuid=true);
+    ~CXGuidObject();
 
-    int Test(int iNumber);
-    bool CompareFile(string strFile1,string strFile2);
+    string GenerateNewGuid(byte *pbyGuid);
+	string GenerateNewGuid();
+	string ConvertGuid(const byte *pbyGuid);
+	void   ConvertGuid(const string &strGuid, byte *pbyGuid);
+
+	string GetGuidString() { return m_strGuid; }
+	bool   GetGuidBytes(byte byGuid[CX_GUID_LEN]);
+
+	void  ConvertBytes(byte*pBytes,int iLen);
+
+private:
+	string m_strGuid;
+	byte   m_byGuid[CX_GUID_LEN];
+	bool   m_bGenerated;
+
 };
+#endif //__CXGUIDOBJECT_H__
 

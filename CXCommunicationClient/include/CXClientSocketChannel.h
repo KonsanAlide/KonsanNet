@@ -75,6 +75,7 @@ namespace CXCommunication
         bool   m_bIsOpened;
         string m_strRemoteUser;
         string m_strRemotePassword;
+        byte   m_byLoginObjGuid[CX_GUID_LEN];
     };
 }
 #endif //__CXCLIENTSOCKETCHANNEL_H__

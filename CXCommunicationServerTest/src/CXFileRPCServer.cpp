@@ -1,5 +1,5 @@
 /****************************************************************************
-Copyright (c) 2018 Charles Yang
+Copyright (c) 2018-2019 Charles Yang
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,9 +15,10 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#include "CXFileMessageProcessHandle.h"
+#include "CXFileRPCServer.h"
 #include "CXPacketCodeDefine.h"
 #include "CXFilePacketStructure.h"
+#include "PlatformFunctionDefine.h"
 #include <time.h>
 #include <fcntl.h>
 #ifdef WIN32
@@ -30,25 +31,34 @@ Description£º
 #include <unistd.h>
 #endif
 
-#include "CXFile64.h"
 
 using namespace CXCommunication;
 
-CXFileMessageProcessHandle::CXFileMessageProcessHandle()
+CXFileRPCServer::CXFileRPCServer()
 {
+    GetObjectGuid();
 }
 
 
-CXFileMessageProcessHandle::~CXFileMessageProcessHandle()
+CXFileRPCServer::~CXFileRPCServer()
 {
 }
 
 //return value:==-2 need to close the connection
-int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXConnectionObject* pCon,
-    CXConnectionSession *pSession)
+int CXFileRPCServer::ProcessMessage(PCXMessageData pMes)
 {
     DWORD dwMessageCode = pMes->bodyData.dwMesCode;
     int iReceiveDataLen = pMes->dwDataLen;
+    CXConnectionObject *pCon = (CXConnectionObject*)pMes->pConObj;
+    if (pCon == NULL)
+    {
+        return -1;
+    }
+    CXConnectionSession *pSession = (CXConnectionSession*)pCon->GetSession();
+    if (pSession == NULL)
+    {
+        return -1;
+    }
 
     DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
     byte  bySendBuf[1024] = { 0 };
@@ -80,21 +90,13 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
                 pReply->dwReplyCode = 201;
                 break;
             }
-            bool bHaveFileObject = false;
-            pFile = (CXFile64 *)pSession->GetData("file");
-            if (pFile == NULL)
+
+            if (m_file.IsOpen())
             {
-                pFile = new CXFile64();
+                m_file.Close();
             }
-            else
-            {
-                if (pFile->IsOpen())
-                {
-                    pFile->Close();
-                }
-                bHaveFileObject = true;
-            }
-            if (!pFile->Open(pData->szFilePath, CXFile64::modeRead))
+            
+            if (!m_file.Open(pData->szFilePath, CXFile64::modeRead))
             {
                 pReply->dwReplyCode = 202;
 
@@ -103,8 +105,11 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
                 pReply->dwDataLen = strlen(pszError) + 1;
                 break;
             }
-            if (!bHaveFileObject)
-                pSession->SetData("file", (void*)pFile);
+
+            char  szInfo[1024] = { 0 };
+            sprintf_s(szInfo, 1024, "Open file %s,connection index is %lld, file handle is %x,session is %x,guid is %s\n",
+                pData->szFilePath,pCon->GetConnectionIndex(), pFile, pSession, pSession->GetSessionGuid().c_str());
+            //pCon->GetLogHandle()->Log(CXLog::CXLOG_INFO, szInfo);
 
             pReply->dwReplyCode = 200;
             break;
@@ -119,6 +124,53 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
         break;
     }
     case CX_FILE_SEEK_CODE:
+    {
+        PCXFileSeek pData = (PCXFileSeek)pMes->bodyData.buf;
+        DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
+        char  szInfo[1024] = { 0 };
+
+        PCXCommonMessageReply pReply = (PCXCommonMessageReply)bySendBuf;
+        DWORD dwLeftDataLen = 1024 - sizeof(CXCommonMessageReply) - 1;
+
+        while (true)
+        {
+            if (!m_file.IsOpen())
+            {
+                pReply->dwReplyCode = 202;
+                strcpy(pReply->szData, "The file had been closed!\n");
+                pReply->dwDataLen = strlen(pReply->szData) + 1;
+                pCon->GetLogHandle()->Log(CXLog::CXLOG_ERROR, pReply->szData);
+                break;
+            }
+
+
+            DWORD dwWrittenLen = 0;
+
+            //need to seek a other position
+            if (!((pData->dwSeekType == (DWORD)CXFile64::current) && pData->iSeekPos == 0))
+            {
+                if (!m_file.Seek(pData->iSeekPos, (CXFile64::SEEKTYPE)pData->dwSeekType))
+                {
+                    pReply->dwReplyCode = 501;
+                    sprintf_s(pReply->szData, dwLeftDataLen, "Failed to seek to a new position %lld, seek type is %d!",
+                        pData->iSeekPos, pData->dwSeekType);
+                    pReply->dwDataLen = strlen(pReply->szData) + 1;
+
+                    pCon->GetLogHandle()->Log(CXLog::CXLOG_ERROR, pReply->szData);
+                    break;
+                }
+            }
+
+            pReply->dwReplyCode = 200;
+            break;
+        }
+
+        bool bRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_FILE_SEEK_REPLY_CODE);
+        if (!bRet)
+        {
+            return -2;
+        }
+    }
         break;
     case CX_FILE_READ_CODE:
     {
@@ -129,19 +181,19 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
         while (true)
         {
             PCXFileRead pData = (PCXFileRead)pMes->bodyData.buf;
-            if (pData->dwReadLen <= 0 || pData->dwReadLen>(1024 * 1023))
+            if (pData->dwReadLen <= 0 || pData->dwReadLen>(1024 * 10240))
             {
                 pReply->dwReplyCode = 201;
                 bNotReadFromFle = true;
                 break;
             }
 
-            pFile = (CXFile64 *)pSession->GetData("file");
-            if (pFile == NULL)
+            if (!m_file.IsOpen())
             {
                 pReply->dwReplyCode = 202;
-                strcpy(pReply->szData, "The file had been close by other process!");
+                strcpy(pReply->szData, "The file had been closed!\n");
                 pReply->dwDataLen = strlen(pReply->szData) + 1;
+                pCon->GetLogHandle()->Log(CXLog::CXLOG_ERROR, pReply->szData);
                 bNotReadFromFle = true;
                 break;
             }
@@ -169,23 +221,49 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
                     iNeedRead = pData->dwReadLen - iTotalReadLen;
                 }
                 DWORD dwReadLen = 0;
-                if (pFile->Read((byte*)pReply->szData, iNeedRead, dwReadLen))
+                if (m_file.Read((byte*)(pReply->szData+ iTotalReadLen), iNeedRead, dwReadLen))
                 {
                     iTotalReadLen += dwReadLen;
                     pReply->dwDataLen += dwReadLen;
 
                     if (dwReadLen != iNeedRead)//read to file end
                     {
+                        DWORD dwEr = GetLastError();
+                        uint64 uiFileSize = 0;
+                        m_file.GetFileLength(uiFileSize);
+                        uint64 uiCurPos = 0;
+                        m_file.GetCurrentPosition(uiCurPos);
                         pReply->dwReplyCode = 204;
+                        char  szInfo[1024] = { 0 };
+                        sprintf_s(szInfo, 1024, "Failed to read data, need read is %d,had read %d,"
+                            "current position is %lld,file is %lld,connection index is %lld,"
+                            "file handle is %x,session is %x,guid is %s\n",
+                            pData->dwReadLen, iTotalReadLen, uiCurPos, uiFileSize,
+                            pCon->GetConnectionIndex(), pFile,pSession,pSession->GetSessionGuid().c_str());
+                        pCon->GetLogHandle()->Log(CXLog::CXLOG_ERROR, szInfo);
                         break;
                     }
                 }
                 else
                 {
                     pReply->dwReplyCode = 205;
+
+                    uint64 uiFileSize = 0;
+                    m_file.GetFileLength(uiFileSize);
+                    uint64 uiCurPos = 0;
+                    m_file.GetCurrentPosition(uiCurPos);
+
+                    DWORD dwEr = GetLastError();
                     char *pszError = strerror(errno);
                     strcpy(pReply->szData, pszError);
                     pReply->dwDataLen = strlen(pszError) + 1;
+
+                    char  szInfo[1024] = { 0 };
+                    sprintf_s(szInfo, 1024, "Failed to read data, need read is %d,had read %d,"
+                        "current position is %lld,file is %lld,connection index is %lld,file handle is %x\n",
+                        pData->dwReadLen, iTotalReadLen, uiCurPos, uiFileSize,
+                        pCon->GetConnectionIndex(), pFile);
+                    pCon->GetLogHandle()->Log(CXLog::CXLOG_ERROR, szInfo);
                     break;
                 }
             }
@@ -195,6 +273,11 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
             pCon->FreeBuffer(pBufSend);
             if (!bRet)
             {
+                char  szInfo[1024] = { 0 };
+                sprintf_s(szInfo, 1024, "Failed to sent data, need send is %d,had sent %d,connection index is %lld\n",
+                    dwSendMesLen, iTotalReadLen,
+                    pCon->GetConnectionIndex());
+                pCon->GetLogHandle()->Log(CXLog::CXLOG_ERROR, szInfo);
                 return -2;
             }
             break;
@@ -222,17 +305,15 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
         {
             PCXFileClose pData = (PCXFileClose)pMes->bodyData.buf;
 
-            pFile = (CXFile64 *)pSession->GetData("file");
-            if (pFile == NULL)
+            if (m_file.IsOpen())
             {
-                pReply->dwReplyCode = 202;
-                strcpy(pReply->szData, "The file had been close by other process!");
-                pReply->dwDataLen = strlen(pReply->szData) + 1;
-                break;
+                m_file.Close();
             }
 
-            pFile->Close();
-            //pSession->RemoveData("file");
+            char  szInfo[1024] = { 0 };
+            sprintf_s(szInfo, 1024, "Close file,connection index is %lld,file handle is %x\n",
+                pCon->GetConnectionIndex(), pFile);
+            pCon->GetLogHandle()->Log(CXLog::CXLOG_INFO, szInfo);
 
             pReply->dwReplyCode = 200;
             break;
@@ -250,17 +331,17 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
         PCXCommonMessageReply pReply = (PCXCommonMessageReply)bySendBuf;
         while (true)
         {
-            pFile = (CXFile64 *)pSession->GetData("file");
-            if (pFile == NULL)
+            if (!m_file.IsOpen())
             {
                 pReply->dwReplyCode = 202;
-                strcpy(pReply->szData, "The file had been close by other process!");
+                strcpy(pReply->szData, "The file had been closed!\n");
                 pReply->dwDataLen = strlen(pReply->szData) + 1;
+                pCon->GetLogHandle()->Log(CXLog::CXLOG_ERROR, pReply->szData);
                 break;
             }
 
             uint64 uiFileLen = 0;
-            if (pFile->GetFileLength(uiFileLen))
+            if (m_file.GetFileLength(uiFileLen))
             {
                 pReply->dwValue1 = uiFileLen >> 32;
                 pReply->dwValue2 = uiFileLen & 0xffffffff;
@@ -288,7 +369,25 @@ int CXFileMessageProcessHandle::OnReceivedMessage(const PCXMessageData pMes, CXC
     return RETURN_SUCCEED;
 }
 
-int CXFileMessageProcessHandle::SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen)
+CXRPCObjectServer* CXFileRPCServer::CreateObject()
+{
+    return (CXRPCObjectServer*)new CXFileRPCServer;
+}
+
+int CXFileRPCServer::SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen)
 {
     return RETURN_SUCCEED;
+}
+
+void CXFileRPCServer::Destroy()
+{
+    if (!m_file.IsOpen())
+    {
+        m_file.Close();
+    }
+}
+
+void CXFileRPCServer::RecordSlowOps(PCXMessageData pMes)
+{
+
 }

@@ -66,6 +66,10 @@ namespace CXCommunication
         virtual string GetIP()const;
 
         bool IsHaveAddress() { return m_bSet; }
+
+		string  GetAddressString();
+
+		void SetAddress(const string &strIP, unsigned short usPort, bool b64bitAddr = false);
 	};
 }
 

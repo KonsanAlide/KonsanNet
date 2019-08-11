@@ -57,6 +57,7 @@ namespace CXCommunication
             void Lock();
             void UnLock();
             void Build(cxsocket sock,uint64 uiConnIndex,sockaddr_in addr);
+			//record the time of the last received packet
             void RecordCurrentPacketTime();
 
             uint64   GetLastPacketTime(){return m_tmLastPacketTime;}
@@ -76,8 +77,16 @@ namespace CXCommunication
             void* GetBuffer(DWORD dwBufSize) { return m_lpCacheObj->GetBuffer(dwBufSize); }
             void  FreeBuffer(void* pBuf) { m_lpCacheObj->FreeBuffer(pBuf); }
 
-            //parse the received data in the buffer list, make up a complete packet of some data fragments
-            int    RecvPacket(PCXBufferObj pBufObj,DWORD dwTransDataOfBytes,bool bLockBySelf = true);
+            //push the received buffer to the end of the read buffer list
+            bool  PushReceivedBuffer(PCXBufferObj pBufObj);
+
+			//receive a buffer, add it to the read buffer list
+			//parse the read buffer list, restructure the message packet
+			//return value: ==-2 the read list has some error
+			//              ==-3 occur error when allocat memory
+			//              ==-4 received a incorrect packet
+            int    RecvPacket(PCXBufferObj pBufObj,DWORD dwTransDataOfBytes, byte* pbyThreadCache,
+				DWORD dwCacheLen,bool bLockBySelf = true);
 
             //verify the check sum of the message data
             bool   VerifyPacketBodyData(PCXPacketHeader pHeader,byte *pData);
@@ -143,6 +152,22 @@ namespace CXCommunication
             void  UnlockRead();
 
             DWORD GetTimeOutMSeconds() { return m_dwTimeOutMSeconds; }
+
+            void RecordReleasedTime();
+            uint64 GetReleasedTime() { return m_tmReleasedTime; }
+
+            // get the tick count value 
+            uint64 GetTickCountValue();
+
+			void SetJournalLogHandle(CXLog * handle) { m_pJouralLogHandle = handle; }
+			CXLog *GetJournalLogHandle() { return m_pJouralLogHandle; }
+
+			//pszTimeString: if not NULL,will save the time string , the format is: 2019-07-31_15:39:29
+			//return value : the current time 
+			int64  GetCurrentTimeMS(char *pszTimeString = NULL);
+
+			//output the operation information to the journal log;
+			void   OutputJournal(PCXMessageData pMes,int64 iBeginTimsMS);
 
         protected:
         private:
@@ -227,6 +252,13 @@ namespace CXCommunication
             //the milliseconds of the connections timeout value
             //if the value is 0xffffffff, the connection will be not time out, the value show that the time is infinite
             DWORD  m_dwTimeOutMSeconds;
+
+            // the released time of this connection
+            // when a connection had been closed, release it
+            uint64 m_tmReleasedTime;
+
+			//record journal log
+			CXLog  *m_pJouralLogHandle;
     };
 
 }

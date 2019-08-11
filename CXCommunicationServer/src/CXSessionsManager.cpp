@@ -1,5 +1,4 @@
 #include "CXSessionsManager.h"
-
 using  namespace CXCommunication;
 
 CXSessionsManager::CXSessionsManager()
@@ -11,17 +10,10 @@ CXSessionsManager::~CXSessionsManager()
     Destroy();
 }
 
-void CXSessionsManager::AddFreeSession(CXConnectionSession * pObj)
-{
-    m_lockFreeSessions.Lock();
-    m_queueFreeSessions.push(pObj);
-    m_lockFreeSessions.Unlock();
-}
-
 CXConnectionSession * CXSessionsManager::GetFreeSession()
 {
     CXConnectionSession * pObj = NULL;
-    m_lockFreeSessions.Lock();
+    m_lock.Lock();
     int iSize = m_queueFreeSessions.size();
     if (iSize <= 0)
     {
@@ -41,44 +33,41 @@ CXConnectionSession * CXSessionsManager::GetFreeSession()
         pObj = m_queueFreeSessions.front();
         m_queueFreeSessions.pop();
     }
-    m_lockFreeSessions.Unlock();
+    m_lock.Unlock();
     return pObj;
 }
 
 int  CXSessionsManager::AddUsingSession(CXConnectionSession * pObj)
 {
-    m_lockUsingSessions.Lock();
+    m_lock.Lock();
     if (m_mapUsingSessions.find(pObj->GetSessionGuid()) != m_mapUsingSessions.end())
     {
-        m_lockUsingSessions.Unlock();
+        m_lock.Unlock();
         return -1;
     }
     else
     {
         m_mapUsingSessions[pObj->GetSessionGuid()] = pObj;
-        m_lockUsingSessions.Unlock();
+        m_lock.Unlock();
         return 0;
     }
 }
-void CXSessionsManager::RemoveUsingSession(CXConnectionSession * pObj)
-{
-    RemoveUsingSession(pObj->GetSessionGuid());
-}
 
-void CXSessionsManager::RemoveUsingSession(string strSessionGuid)
+void CXSessionsManager::CloseSession(CXConnectionSession * pObj, bool bNeedLockBySelf)
 {
-    m_lockUsingSessions.Lock();
+    if(bNeedLockBySelf)
+        m_lock.Lock();
     unordered_map<string, CXConnectionSession *>::iterator it;
-    it = m_mapUsingSessions.find(strSessionGuid);
+    it = m_mapUsingSessions.find(pObj->GetSessionGuid());
     if (it != m_mapUsingSessions.end())
     {
         m_mapUsingSessions.erase(it);
-        m_lockUsingSessions.Unlock();
+        pObj->Destroy();
+        m_queueFreeSessions.push(pObj);
     }
-    else
-    {
-        m_lockUsingSessions.Unlock();
-    }
+
+    if (bNeedLockBySelf)
+        m_lock.Unlock();
 }
 
 string CXSessionsManager::BuildSessionGuid()
@@ -88,17 +77,17 @@ string CXSessionsManager::BuildSessionGuid()
 
 CXConnectionSession * CXSessionsManager::FindUsingSession(string strSessionGuid)
 {
-    m_lockUsingSessions.Lock();
+    m_lock.Lock();
     unordered_map<string, CXConnectionSession *>::iterator it;
     it = m_mapUsingSessions.find(strSessionGuid);
     if (it != m_mapUsingSessions.end())
     {
-        m_lockUsingSessions.Unlock();
+        m_lock.Unlock();
         return (CXConnectionSession*)(it->second);
     }
     else
     {
-        m_lockUsingSessions.Unlock();
+        m_lock.Unlock();
     }
     return NULL;
 }
@@ -116,4 +105,13 @@ void CXSessionsManager::Destroy()
     {
         m_queueFreeSessions.pop();
     }
+}
+
+void CXSessionsManager::Lock()
+{
+    m_lock.Lock();
+}
+void CXSessionsManager::UnLock()
+{
+    m_lock.Unlock();
 }

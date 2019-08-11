@@ -1,5 +1,5 @@
 /****************************************************************************
-Copyright (c) 2018 Charles Yang
+Copyright (c) 2018-2019 Charles Yang
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,27 +15,28 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#ifndef CXUSERMESSAGEPROCESS_H
-#define CXUSERMESSAGEPROCESS_H
+#ifndef __CXSESSIONLOGINRPCSERVER_H__
+#define __CXSESSIONLOGINRPCSERVER_H__
 
-#include "CXConnectionObject.h"
-#include "CXConnectionSession.h"
-#include "CXCommonPacketStructure.h"
-#include "CXUserMessageProcessBase.h"
+#include "CXSessionLevelBase.h"
+
 namespace CXCommunication
 {
-    class CXUserMessageProcess : public CXUserMessageProcessBase
+    class CXSessionLoginRPCServer :public CXSessionLevelBase
     {
     public:
-        CXUserMessageProcess();
-        ~CXUserMessageProcess();
+        CXSessionLoginRPCServer();
+        ~CXSessionLoginRPCServer();
 
-        int OnReceivedMessage(const PCXMessageData pMes, CXConnectionObject * pCon,
-            CXConnectionSession *pSession);
+        virtual string GetObjectName() { return "CXSessionLoginV10001"; }
 
-        int SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen);
+        virtual CXRPCObjectServer* CreateObject();
+
+        virtual void Destroy();
+
+        virtual void RecordSlowOps(PCXMessageData pMes);
 
     };
 }
-#endif //CXUSERMESSAGEPROCESS_H
+#endif //__CXSESSIONLOGINRPCSERVER_H__
 

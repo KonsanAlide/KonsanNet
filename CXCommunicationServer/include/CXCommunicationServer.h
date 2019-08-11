@@ -31,9 +31,9 @@ Description£º
 #include <list>
 #include "CXDataParserImpl.h"
 #include "CXSessionLevelBase.h"
-#include "CXUserMessageProcess.h"
 #include "CXLog.h"
 #include "CXNetworkInitEnv.h"
+#include "CXRPCObjectManager.h"
 using namespace std;
 
 namespace CXCommunication
@@ -50,7 +50,7 @@ namespace CXCommunication
         int Stop();
 
         static int  OnRecv(CXConnectionObject &conObj, PCXBufferObj pBufObj,
-            DWORD dwTransDataOfBytes);
+            DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
 
         static int  OnClose(CXConnectionObject &conObj,ConnectionClosedType emClosedType);
 
@@ -77,15 +77,13 @@ namespace CXCommunication
         void SetDataParserHandle(CXDataParserImpl * handle) { m_pDataParserHandle = handle; }
         CXDataParserImpl *GetDataParserHandle() { return m_pDataParserHandle; }
 
-        void SetUserMessageProcessHandle(CXUserMessageProcessBase * handle) { m_pUserMessageProcessHandle = handle; }
-        CXUserMessageProcessBase *GetUserMessageProcessHandle() { return m_pUserMessageProcessHandle; }
-
-        void SetSessionMessageProcessHandle(CXSessionLevelBase * handle) { m_pSessionMessageProcessHandle = handle; }
-        CXSessionLevelBase *GetSessionMessageProcessHandle() { return m_pSessionMessageProcessHandle; }
-
         void SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
         CXLog *GetLogHandle() { return m_pLogHandle; }
 
+		void SetJournalLogHandle(CXLog * handle) { m_pJouralLogHandle = handle; }
+		CXLog *GetJournalLogHandle() { return m_pJouralLogHandle; }
+
+        void Register(const string &strObjectGuid, CXRPCObjectServer *pObj) { m_rpcObjectManager.Register(strObjectGuid, pObj); }
 
     private:
         bool m_bRunning;
@@ -102,10 +100,13 @@ namespace CXCommunication
         CXSpinLock m_lock;
         uint64 m_uiTotalReceiveBuffers;
         CXDataParserImpl *m_pDataParserHandle;
-        CXUserMessageProcessBase *m_pUserMessageProcessHandle;
-        CXSessionLevelBase   *m_pSessionMessageProcessHandle;
         CXLog                *m_pLogHandle;
         CXNetworkInitEnv      m_networkInit;
+
+		//record journal log
+		CXLog                *m_pJouralLogHandle;
+
+        CXRPCObjectManager    m_rpcObjectManager;
     };
 }
 

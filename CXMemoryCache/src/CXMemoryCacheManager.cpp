@@ -23,10 +23,12 @@ use to save data blocks of different size.
 #include <math.h>
 #endif
 
+void* ThreadCheckCache(void* lpvoid);
+
 CXMemoryCacheManager::CXMemoryCacheManager(DWORD dwInitCacheNumber, 
     uint64 uiMaxMemorySize, DWORD dwMaxObjectSize)
 {
-    m_dwInitCacheNumber = 1;
+    m_dwInitCacheNumber = 4;
     if (dwInitCacheNumber > MAX_CACHE_NUMBER_IN_ONE_KIND)
     {
         dwInitCacheNumber = MAX_CACHE_NUMBER_IN_ONE_KIND;
@@ -36,13 +38,19 @@ CXMemoryCacheManager::CXMemoryCacheManager(DWORD dwInitCacheNumber,
     m_uiMaxUsableMemorySize = uiMaxMemorySize;
 
     m_dwMaxObjectSize = dwMaxObjectSize;
+    if (m_dwMaxObjectSize> 1024 * 1024)
+    {
+        m_dwMaxObjectSize = 1024 * 1024;
+    }
 
     memset(m_ppCaches, 0, sizeof(m_ppCaches));
+
+    m_bRunning = false;
 }
 
 CXMemoryCacheManager::CXMemoryCacheManager()
 {
-    m_dwInitCacheNumber = 1;
+    m_dwInitCacheNumber = 4;
     m_uiMaxUsableMemorySize = 1024 * 1024 * 1024;
     m_dwMaxObjectSize = 1024 * 1024;
     memset(m_ppCaches, 0, sizeof(m_ppCaches));
@@ -51,38 +59,64 @@ CXMemoryCacheManager::CXMemoryCacheManager()
 
 CXMemoryCacheManager::~CXMemoryCacheManager()
 {
+    Destory();
+    
 }
+
 int  CXMemoryCacheManager::Init(map<DWORD, DWORD>mapCacheConfig)
 //int  CXMemoryCacheManager::Init(DWORD dwObjectSize, DWORD dwObjectNumber)
 {
     DWORD dwObjectSize = 0;
     DWORD dwObjectNumber = 0;
 
-    m_lock.Lock();
-    map<DWORD, DWORD>::iterator it = mapCacheConfig.begin();
-    for (; it!= mapCacheConfig.end();it++)
-    {
-        dwObjectSize = it->first;
-        dwObjectNumber = it->second;
-        int iIndex = CalculateIndex(dwObjectSize);
 
-        CXMemoryCache ** ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
-        //CXMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
-        if (ppArray == NULL)
-        {
-            for (int i = 0; i<MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
+	m_lock.Lock();
+
+	//create all buffer in the array ,but not initialize
+	for (int iIndex = 0; iIndex < CX_CACHE_ARRAY_SIZE; iIndex++)
+	{
+		CXElasticMemoryCache ** ppArray = (CXElasticMemoryCache **)m_ppCaches[iIndex];
+		//CXElasticMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
+		if (ppArray == NULL)
+		{
+            int iValue = 0x1<< iIndex;
+            dwObjectSize = iValue*256;
+            dwObjectNumber = 128*(CX_CACHE_ARRAY_SIZE - iIndex);
+
+            bool bInitAtOnce = false;
+            map<DWORD, DWORD>::iterator it = mapCacheConfig.begin();
+            for (; it != mapCacheConfig.end(); it++)
             {
-                int iRet = AddCache(dwObjectSize, dwObjectNumber, iIndex);
-                if (iRet != 0)
+                int iIndexInConfig = CalculateIndex(it->first);
+                if (iIndexInConfig== iIndex)
                 {
-                    m_lock.Unlock();
-                    return -2;
+                    dwObjectNumber = it->second;
+                    bInitAtOnce = true;
+                    mapCacheConfig.erase(it);
+                    break;
                 }
             }
-        }
-    }
+
+			int iRet = AddCache(dwObjectSize, dwObjectNumber, iIndex, bInitAtOnce);
+			if (iRet != 0)
+			{
+				m_lock.Unlock();
+				return -2;
+			}
+			
+		}
+	}
 
     m_lock.Unlock();
+
+    m_bRunning = true;
+    RunFun funThread = &ThreadCheckCache;
+    int iRet = m_thread.Start(funThread, (void*)this);
+    if (iRet != 0)
+    {
+        printf("Failed to create the checking cache pool thread\n");
+        return -3;
+    }
 
     return RETURN_SUCCEED;
 }
@@ -95,58 +129,52 @@ int  CXMemoryCacheManager::Init(map<DWORD, DWORD>mapCacheConfig)
 //             ==-1 invalid parameter
 //             ==-2 failed to allocate memory 
 //             ==-3 the number of this kind cache is more than  MAX_CACHE_NUMBER_IN_ONE_KIND
-int CXMemoryCacheManager::AddCache(DWORD dwObjectSize, DWORD dwObjectNumber, int iIndex)
+int CXMemoryCacheManager::AddCache(DWORD dwObjectSize, DWORD dwObjectNumber, int iIndex, bool bInitAtOnce)
 {
-    if (iIndex > 13 || dwObjectSize>m_uiMaxUsableMemorySize)
+    if (iIndex > CX_CACHE_ARRAY_SIZE || dwObjectSize>m_uiMaxUsableMemorySize)
     {
         return INVALID_PARAMETER;
     }
     int iRet = 0;
     try
     {
-        //CXMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
+        //CXElasticMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
         if (iIndex == -1)//need to parse the index
         {
             iIndex = CalculateIndex(dwObjectSize);
         }
 
-        CXMemoryCache ** ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+        CXElasticMemoryCache ** ppArray = (CXElasticMemoryCache **)m_ppCaches[iIndex];
 
         if (ppArray == NULL)
         {
             //allocate the memory caches that its structure size is 4kb 
-            ppArray = new CXMemoryCache*[MAX_CACHE_NUMBER_IN_ONE_KIND];
+            ppArray = new CXElasticMemoryCache*[MAX_CACHE_NUMBER_IN_ONE_KIND];
             if (ppArray == NULL)
             {
                 return -2;
             }
-            for (int i = 0; i<MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
-            {
-                ppArray[i] = NULL;
-            }
 
             bool bSucceed = true;
-            for (int i = 0; i<m_dwInitCacheNumber; i++)
+            for (int i = 0; i< MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
             {
-                ppArray[i] = new CXMemoryCache();
-                if (ppArray[i] == NULL)
+                if (i < m_dwInitCacheNumber)
                 {
-                    bSucceed = false;
-                    break;
-                }
-                else
-                {
-                    iRet = ppArray[i]->Initialize(dwObjectSize, dwObjectNumber);
-                    if (iRet != 0)
+                    ppArray[i] = AllocCacheAndInit(dwObjectSize, dwObjectNumber, bInitAtOnce);
+                    if (ppArray[i] == NULL)
                     {
                         bSucceed = false;
                         break;
                     }
                 }
+                else
+                {
+                    ppArray[i] = NULL;
+                }
             }
             if (!bSucceed)
             {
-                for (int i = 0; i<m_dwInitCacheNumber; i++)
+                for (int i = 0; i< MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
                 {
                     if (ppArray[i] != NULL)
                     {
@@ -163,34 +191,18 @@ int CXMemoryCacheManager::AddCache(DWORD dwObjectSize, DWORD dwObjectNumber, int
         }
         else
         {
-            bool bFindNullPointer = false;
-            for (int i = 0; i<MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
+            for (int i = 0; i< m_dwInitCacheNumber; i++)
             {
                 if (ppArray[i] == NULL)
                 {
-                    bFindNullPointer = true;
-                    ppArray[i] = new CXMemoryCache();
+					ppArray[i] = AllocCacheAndInit(dwObjectSize, dwObjectNumber, bInitAtOnce);
                     if (ppArray[i] == NULL)
                     {
                         return -2;
                     }
-                    else
-                    {
-                        iRet = ppArray[i]->Initialize(dwObjectSize, dwObjectNumber);
-                        if (iRet != 0)
-                        {
-                            ppArray[i]->Destroy();
-                            delete[]ppArray[i];
-                            ppArray[i] = NULL;
-                            return -2;
-                        }
-                    }
+                    
                     break;
                 }
-            }
-            if (!bFindNullPointer)
-            {
-                return -3;
             }
         }
     }
@@ -223,85 +235,86 @@ int CXMemoryCacheManager::CalculateIndex(DWORD dwObjectSize)
 
 void CXMemoryCacheManager::Destory()
 {
+    if (m_bRunning)
+    {
+        m_bRunning = false;
+        m_eveWaitCheck.SetEvent();
 
+        m_lock.Lock();
+
+        //create all buffer in the array ,but not initialize
+        for (int iIndex = 0; iIndex < CX_CACHE_ARRAY_SIZE; iIndex++)
+        {
+            CXElasticMemoryCache ** ppArray = (CXElasticMemoryCache **)m_ppCaches[iIndex];
+            //CXElasticMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
+            if (ppArray != NULL)
+            {
+                for (int i = 0; i < m_dwInitCacheNumber; i++)
+                {
+                    if (ppArray[i] != NULL)
+                    {
+                        ppArray[i]->Destroy();
+                        delete ppArray[i];
+                    }
+                }
+                delete ppArray;
+                m_ppCaches[iIndex] = NULL;
+            }
+        }
+
+        m_lock.Unlock();
+    }
 }
 
 //get a memory cache object,this memory cache object have contains 
 //a lot of continuous small memory blocks of the same size,
 //the size of the small memory blocks had been set to iObjectSize
-CXMemoryCache* CXMemoryCacheManager::GetMemoryCache(DWORD dwObjectSize)
+CXElasticMemoryCache* CXMemoryCacheManager::GetMemoryCache(DWORD dwObjectSize)
 {
-    //CXMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
+    if (dwObjectSize > m_dwMaxObjectSize)
+    {
+        return NULL;
+    }
+
+    //CXElasticMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
     int iIndex = CalculateIndex(dwObjectSize);
     dwObjectSize = pow(2,iIndex) * 256;
     
-    CXMemoryCache ** ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+	m_lock.Lock();
+    CXElasticMemoryCache ** ppArray = (CXElasticMemoryCache **)m_ppCaches[iIndex];
     if (ppArray == NULL)
     {
-        m_lock.Lock();
-        //ppArray = m_mapCaches[dwObjectSize];
-        ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
-        if (ppArray == NULL)
-        {
-            int iRet = AddCache(dwObjectSize, 512);
-            if (iRet != 0)
-            {
-                m_lock.Unlock();
-                return NULL;
-            }
-
-            //ppArray = m_mapCaches[dwObjectSize];
-            ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
-        }
-        m_lock.Unlock();  
+        m_lock.Unlock();
+        return NULL;
     }
 
-    if (ppArray != NULL)
+    
+    int j = rand()% m_dwInitCacheNumber;
+    if (ppArray[j] != NULL)
     {
-        int j = rand()% MAX_CACHE_NUMBER_IN_ONE_KIND;
-        if (ppArray[j] != NULL)
-        {
-            return ppArray[j];
-        }
-        else
-        {
-            m_lock.Lock();
-            ppArray[j] = new CXMemoryCache();
-            if (ppArray[j] == NULL)
-            {
-                return NULL;
-            }
-            else
-            {
-                int iRet = ppArray[j]->Initialize(dwObjectSize, 512);
-                if (iRet != 0)
-                {
-                    ppArray[j]->Destroy();
-                    delete[]ppArray[j];
-                    ppArray[j] = NULL;
-                    return NULL;
-                }
-            }
-            m_lock.Unlock();
-        }
-        for (int i = 0; i<MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
-        {
-            if (ppArray[i] != NULL)
-            {
-                if (ppArray[i]->IsHaveObject())
-                {
-                    return ppArray[i];
-                }
-            }
-        }
+        return ppArray[j];
     }
+    else
+    {
+		ppArray[j] = AllocCacheAndInit(dwObjectSize, 512, true);
+        if (ppArray[j] == NULL)
+        {
+			m_lock.Unlock();
+            return NULL;
+        }
+
+		m_lock.Unlock();
+		return ppArray[j];
+    }
+    
+	m_lock.Unlock();
 
     return NULL;
 
 }
 
-//free a CXMemoryCache object to the cache manager
-void CXMemoryCacheManager::FreeMemoryCache(CXMemoryCache *pObj)
+//free a CXElasticMemoryCache object to the cache manager
+void CXMemoryCacheManager::FreeMemoryCache(CXElasticMemoryCache *pObj)
 {
 
 }
@@ -316,70 +329,43 @@ void * CXMemoryCacheManager::GetBuffer(DWORD dwObjectSize)
     int iIndex = CalculateIndex(dwObjectSize);
     dwObjectSize = pow(2, iIndex) * 256;
 
-    CXMemoryCache ** ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
+	
+    CXElasticMemoryCache ** ppArray = (CXElasticMemoryCache **)m_ppCaches[iIndex];
     if (ppArray == NULL)
     {
-        m_lock.Lock();
-        //ppArray = m_mapCaches[dwObjectSize];
-        ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
-        if (ppArray == NULL)
-        {
-            int iRet = AddCache(dwObjectSize, 512);
-            if (iRet != 0)
-            {
-                m_lock.Unlock();
-                return NULL;
-            }
-
-            //ppArray = m_mapCaches[dwObjectSize];
-            ppArray = (CXMemoryCache **)m_ppCaches[iIndex];
-        }
-        m_lock.Unlock();
+		return NULL;
     }
+	
 
     if (ppArray != NULL)
     {
         void *pObj = NULL;
-        int j = rand() % MAX_CACHE_NUMBER_IN_ONE_KIND;
+        int j = rand() % m_dwInitCacheNumber;
         if (ppArray[j] == NULL)
         {
-            m_lock.Lock();
-            ppArray[j] = new CXMemoryCache();
-            if (ppArray[j] == NULL)
-            {
-                pObj = NULL;
-            }
-            else
-            {
-                int iRet = ppArray[j]->Initialize(dwObjectSize, 512);
-                if (iRet != 0)
-                {
-                    ppArray[j]->Destroy();
-                    delete[]ppArray[j];
-                    ppArray[j] = NULL;
-                }
-            }
-            m_lock.Unlock();
+			return NULL;
         }
 
         if (ppArray[j] != NULL)
-        {
-            pObj = ppArray[j]->GetObject();
-            if (pObj)
-            {
-                return pObj;
-            }
+        {	
+			pObj = ppArray[j]->GetObject();
+			if (pObj)
+			{
+				return pObj;
+			}
         }
 
-        for (int i = 0; i<MAX_CACHE_NUMBER_IN_ONE_KIND; i++)
+        for (int i = 0; i< m_dwInitCacheNumber; i++)
         {
             if (ppArray[i] != NULL)
             {
                 if (ppArray[i]->IsHaveObject())
                 {
                     pObj = ppArray[i]->GetObject();
-                    if (pObj)
-                        return pObj;
+					if (pObj)
+					{
+						return pObj;
+					} 
                 }
             }
         }
@@ -391,12 +377,20 @@ void   CXMemoryCacheManager::FreeBuffer(void *pBuf)
 {
     if (pBuf == NULL)
         return;
-    CXMemoryCache::cx_cache_obj *pObj = (CXMemoryCache::cx_cache_obj *)((byte*)pBuf - sizeof(CXMemoryCache::cx_cache_obj));
+	CXMemoryCache::cx_cache_obj *pObj = (CXMemoryCache::cx_cache_obj *)((byte*)pBuf - sizeof(CXMemoryCache::cx_cache_obj));
     if (pObj != NULL)
     {
         if (pObj->pThis != NULL)
         {
-            pObj->pThis->FreeObject(pBuf);
+			CXElasticMemoryCache *pElasticObj = (CXElasticMemoryCache*)pObj->pThis->GetElasticObj();
+			if (pElasticObj != NULL)
+			{
+				pElasticObj->FreeObject(pBuf);
+			}
+			else
+			{
+				pObj->pThis->FreeObject(pBuf);
+			} 
         }
     }
 }
@@ -412,7 +406,7 @@ bool  CXMemoryCacheManager::MemcpyBytes(byte *pDestBuf, int iOffset, byte *pSrc,
 {
     if (pDestBuf == NULL || pSrc==NULL)
         return false;
-    CXMemoryCache::cx_cache_obj *pObj = (CXMemoryCache::cx_cache_obj *)((byte*)pDestBuf - sizeof(CXMemoryCache::cx_cache_obj));
+	CXMemoryCache::cx_cache_obj *pObj = (CXMemoryCache::cx_cache_obj *)((byte*)pDestBuf - sizeof(CXMemoryCache::cx_cache_obj));
     if (pObj != NULL)
     {
         if (pObj->pThis != NULL)
@@ -434,7 +428,7 @@ void CXMemoryCacheManager::MemsetZero(byte *pBuf, int iLen)
 {
     if (pBuf == NULL)
         return ;
-    CXMemoryCache::cx_cache_obj *pObj = (CXMemoryCache::cx_cache_obj *)((byte*)pBuf - sizeof(CXMemoryCache::cx_cache_obj));
+	CXMemoryCache::cx_cache_obj *pObj = (CXMemoryCache::cx_cache_obj *)((byte*)pBuf - sizeof(CXMemoryCache::cx_cache_obj));
     if (pObj != NULL)
     {
         if (pObj->pThis != NULL)
@@ -445,4 +439,84 @@ void CXMemoryCacheManager::MemsetZero(byte *pBuf, int iLen)
             }
         }
     }
+}
+
+CXElasticMemoryCache* CXMemoryCacheManager::AllocCacheAndInit(DWORD dwObjectSize, DWORD dwObjectNumber, bool bInitAtOnce)
+{
+	CXElasticMemoryCache* pCache = NULL;
+
+	try
+	{
+		pCache = new CXElasticMemoryCache();
+		if (pCache == NULL)
+		{
+			return NULL;
+		}
+	}
+	catch (const bad_alloc& e)
+	{
+		return NULL;
+	}
+
+    
+    int iRet = pCache->Initialize(dwObjectSize, dwObjectNumber, bInitAtOnce);
+    if (iRet != 0)
+    {
+        pCache->Destroy();
+        delete pCache;
+        pCache = NULL;
+    }
+
+    return pCache;
+}
+
+int CXMemoryCacheManager::CheckCachePool()
+{
+    int iRet = 0;
+    //one minute
+    DWORD dwInterval = 1000 * 60;
+    while (m_bRunning)
+    {
+        m_eveWaitCheck.WaitForSingleObject(dwInterval);
+        if (!m_bRunning)
+        {
+            break;
+        }
+
+        m_lock.Lock();
+
+        //create all buffer in the array ,but not initialize
+        for (int iIndex = 0; iIndex < CX_CACHE_ARRAY_SIZE; iIndex++)
+        {
+            CXElasticMemoryCache ** ppArray = (CXElasticMemoryCache **)m_ppCaches[iIndex];
+            //CXElasticMemoryCache ** ppArray = m_mapCaches[dwObjectSize];
+            if (ppArray != NULL)
+            {
+                for (int i = 0; i < m_dwInitCacheNumber; i++)
+                {
+                    if (ppArray[i] != NULL)
+                    {
+                        DWORD dwUsingNodes = 0;
+                        int64 iUnusedSeconds = ppArray[i]->GetUnusedState(dwUsingNodes);
+                        if (dwUsingNodes == 0 && iUnusedSeconds > 60)
+                        {
+                            ppArray[i]->Destroy();
+                        }
+                    }
+                }
+            }
+        }
+
+        m_lock.Unlock();
+    }
+    return iRet;
+}
+void* ThreadCheckCache(void* lpvoid)
+{
+    CXMemoryCacheManager *pThis = (CXMemoryCacheManager*)lpvoid;
+    if (pThis != NULL)
+    {
+        return (void*)pThis->CheckCachePool();
+    }
+    return 0;
 }

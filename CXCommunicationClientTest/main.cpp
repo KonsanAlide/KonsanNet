@@ -16,10 +16,15 @@
 
 #include "CXClientConnectionSession.h"
 
+//const string g_strDestIP = "127.0.0.1";
+//const string g_strDestIP = "192.168.0.104";
+const string g_strDestIP = "192.168.0.118";
+
 using namespace std;
 using namespace CXCommunication;
 CXNetworkInitEnv g_networkInit;
 CXLog g_logHandle;
+string g_strLocalPath ="";
 
 
 
@@ -35,7 +40,7 @@ void TestSession()
 {
     CXClientConnectionSession session;
 
-    CXSocketAddress addr("192.168.0.104", 4355);
+    CXSocketAddress addr(g_strDestIP.c_str(), 4355);
     session.SetRemoteAddress(addr);
     session.SetUserInfo("test", "123");
 
@@ -73,7 +78,7 @@ void TestSession()
 void TestConection()
 {
     
-    CXSocketAddress addr("192.168.0.104", 4355);
+    CXSocketAddress addr(g_strDestIP.c_str(), 4355);
 
     for (int i=0;i<1;i++)
     {
@@ -131,32 +136,69 @@ void *ThreadWork(void *pVoid)
 }
 int main()
 {
+
+
     g_networkInit.InitEnv();
 
-    if (!g_logHandle.Initialize("../clientlog.log"))
+#ifdef WIN32
+    char szFilePath[MAX_PATH] = { 0 }, szDrive[MAX_PATH] = { 0 };
+    char szDir[MAX_PATH] = { 0 }, szFileName[MAX_PATH] = { 0 }, szExt[MAX_PATH] = { 0 };
+    GetModuleFileName(NULL, szFilePath, sizeof(szFilePath));
+    _splitpath(szFilePath, szDrive, szDir, szFileName, szExt);
+    g_strLocalPath = szDrive;
+    g_strLocalPath.append(szDir);
+#else
+    g_strLocalPath = "./";
+#endif
+
+    if (g_strLocalPath == "")
+    {
+        printf("Not get the local path.\n");
+
+        return -3;
+    }
+
+    //if (!g_logHandle.Initialize(strLocalPath + "clientlog.log",CXLog::CXLOG_DEBUG,true))
+    if (!g_logHandle.Initialize(g_strLocalPath + "clientlog.log", CXLog::CXLOG_INFO, true))
     {
         printf("Failed to initialize the log recorder.\n");
         return -1;
     }
 
+
     //TestSession();
     //TestConection();
     //return -2;
 
-    CXThread workThread[1000];
-    int i = 0;
-    for (i = 0;i<100;i++)
-    {
-        workThread[i].Start(ThreadWork,(void*)i);
-    }
+#ifdef WIN32
+	CoInitialize(NULL);
+#endif
 
-    for (i = 0; i<10; i++)
+    CXThread workThread[1000];
+    int k = 0;
+    while (k++<1000)
     {
-        workThread[i].Wait();
+        int i = 0;
+        for (i = 0; i < 51; i++)
+        {
+            workThread[i].Start(ThreadWork, (void*)i);
+        }
+
+        for (i = 0; i < 51; i++)
+        {
+            workThread[i].Wait();
+        }
+
+        int l = 0;
     }
+    
+    printf("Test had finished.\n");
 
 
     //server.WaitThreadsExit();
     cin.get();
+#ifdef WIN32
+	CoUninitialize();
+#endif
     return 0;
 }

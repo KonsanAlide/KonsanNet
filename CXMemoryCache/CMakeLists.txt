@@ -7,6 +7,8 @@ PROJECT(CXMemoryCache)
 INCLUDE_DIRECTORIES(
 ../CXCommon/include
 ../CXLock/include
+../CXEvent/include
+../CXThread/include
  ./include
 )
 
@@ -30,10 +32,18 @@ SET(LIBRARY_OUTPUT_PATH ../../lib)
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXMemoryCache CXLock_static.lib)
     TARGET_LINK_LIBRARIES(CXMemoryCache_static CXLock_static.lib)
+	TARGET_LINK_LIBRARIES(CXMemoryCache CXEvent_static.lib)
+	TARGET_LINK_LIBRARIES(CXMemoryCache_static CXEvent_static.lib)
+    TARGET_LINK_LIBRARIES(CXMemoryCache CXThread_static.lib)
+	TARGET_LINK_LIBRARIES(CXMemoryCache_static CXThread_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     LINK_DIRECTORIES(../../lib)
     TARGET_LINK_LIBRARIES(CXMemoryCache libCXLock.so)
     TARGET_LINK_LIBRARIES(CXMemoryCache_static libCXLock_static.a)
+	TARGET_LINK_LIBRARIES(CXMemoryCache libCXEvent.so)
+	TARGET_LINK_LIBRARIES(CXMemoryCache_static libCXEvent_static.a)
+    TARGET_LINK_LIBRARIES(CXMemoryCache libCXThread.so)
+	TARGET_LINK_LIBRARIES(CXMemoryCache_static libCXThread_static.a)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 

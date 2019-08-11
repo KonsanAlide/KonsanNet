@@ -20,6 +20,7 @@ Description£º
 #ifndef WIN32
 #include<sys/time.h>
 #endif
+#include "PlatformFunctionDefine.h"
 
 void* ThreadDetect(void* lpvoid);
 namespace CXCommunication
@@ -29,11 +30,12 @@ namespace CXCommunication
         m_uiCurrentConnectionIndex = 0;
         m_pfOnClose = NULL;
         m_bStarted = false;
+        m_pLogHandle = NULL;
     }
 
     CXConnectionsManager::~CXConnectionsManager()
     {
-        //dtor
+        Destroy();
     }
 
     CXConnectionObject * CXConnectionsManager::FindConnectionInPendingMap(uint64 uiConIndex)
@@ -201,6 +203,7 @@ namespace CXCommunication
 
     void CXConnectionsManager::Destroy()
     {
+        Stop();
         unordered_map<uint64, CXConnectionObject *>::iterator it;
         it = m_mapUsingConnections.begin();
         for (; it != m_mapUsingConnections.end(); )
@@ -222,6 +225,10 @@ namespace CXCommunication
         while (m_bStarted)
         {
             m_eveWaitDetect.WaitForSingleObject(50);
+            if (!m_bStarted)
+            {
+                break;
+            }
             iIndex++;
 #ifdef WIN32
             uint64 uiCurTime = GetTickCount64();
@@ -293,9 +300,44 @@ namespace CXCommunication
                 queueTimeOutConnections.pop();
                 if (m_pfOnClose != NULL)
                 {
+
+                    char  szInfo[1024] = { 0 };
+                    sprintf_s(szInfo, 1024, "A connection is timeout,close it, connection index is %lld\n",
+                        pCon->GetConnectionIndex());
+                    if(m_pLogHandle!= NULL)
+                        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
                     m_pfOnClose(*pCon, TIME_OUT);
                 }
             }
+
+#ifdef WIN32
+            uiCurTime = GetTickCount64();
+#else
+            gettimeofday(&tv, NULL);
+            uiCurTime = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+#endif
+            
+            m_lockReleasedConnections.Lock();
+            list<CXConnectionObject*>::iterator itReleased = m_listReleasedConnections.begin();
+            for (; itReleased!= m_listReleasedConnections.end();)
+            {
+                CXConnectionObject * pCon = *itReleased;
+                if (pCon != NULL)
+                {
+                    if (uiCurTime>pCon->GetReleasedTime())
+                    {
+                        if (uiCurTime - pCon->GetReleasedTime() > 2000)
+                        {
+                            AddFreeConnectionObj(pCon);
+                            itReleased = m_listReleasedConnections.erase(itReleased);
+                            continue;
+                        }
+                    }
+                }
+                ++itReleased;
+            }
+            m_lockReleasedConnections.Unlock();
+            
         }
         return true;
     }
@@ -331,6 +373,13 @@ namespace CXCommunication
             m_eveWaitDetect.SetEvent();
             m_threadTimeOutDetect.Wait();
         }
+    }
+
+    void CXConnectionsManager::ReleaseConnection(CXConnectionObject * pObj)
+    {
+        m_lockReleasedConnections.Lock();
+        m_listReleasedConnections.push_back(pObj);
+        m_lockReleasedConnections.Unlock();
     }
 
 }

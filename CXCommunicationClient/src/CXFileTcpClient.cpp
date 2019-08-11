@@ -19,6 +19,7 @@ Description£º
 #include "CXCommonPacketStructure.h"
 #include "CXFilePacketStructure.h"
 #include "CXPacketCodeDefine.h"
+#include "PlatformFunctionDefine.h"
 
 #ifdef WIN32
 #else
@@ -29,12 +30,9 @@ Description£º
 using namespace CXCommunication;
 CXFileTcpClient::CXFileTcpClient()
 {
-    m_strRemoteIP="";
-    m_unRemotePort=0;
-    m_strRemoteFilePath = "";
-    m_strRemoteUser = "";
-    m_strRemotePassword = "";
-    m_bIsOpened = false;
+	GetObjectGuid();
+	m_cmmClient.SetRPCObjectGuid(m_byObjectGuid);
+	m_dataClient.SetRPCObjectGuid(m_byObjectGuid);
 }
 
 
@@ -44,9 +42,16 @@ CXFileTcpClient::~CXFileTcpClient()
     {
         Close();
     }
+
+	m_cxSession.Close();
 }
 
-int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type)
+int CXFileTcpClient::Open(CX_RPC_OBJECT_OPENTYPE type)
+{
+	return -1;
+}
+
+int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type, bool bOpenExisted)
 {
     int iRet = RETURN_SUCCEED;
     if (strRemoteFilePath=="")
@@ -76,16 +81,22 @@ int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type)
     }
     m_bIsOpened = false;
 
-    if(m_cxSession.OpenChannel(m_cmmClient, CXClientSocketChannel::MAJOR_MES_CONNECTION) != RETURN_SUCCEED)
-    {
-        return -3;
-    }
-
-    if (m_cxSession.OpenChannel(m_dataClient, CXClientSocketChannel::DATA_CONNECTION) != RETURN_SUCCEED)
-    {
-        m_cmmClient.Close();
-        return -4;
-    }
+	if (!m_cmmClient.IsConnected())
+	{
+		if (m_cxSession.OpenChannel(m_cmmClient, CXClientSocketChannel::MAJOR_MES_CONNECTION) != RETURN_SUCCEED)
+		{
+			return -3;
+		}
+	}
+	if (!m_dataClient.IsConnected())
+	{
+		if (m_cxSession.OpenChannel(m_dataClient, CXClientSocketChannel::DATA_CONNECTION) != RETURN_SUCCEED)
+		{
+			//m_cmmClient.Close();
+			return -4;
+		}
+	}
+    
 
     byte *pData = m_byPacketData;
     memset(pData, 0, CLIENT_BUF_SIZE);
@@ -94,6 +105,10 @@ int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type)
     pMes->byOpenType = type;
     pMes->dwFilePathLen = strRemoteFilePath.length()+1;
     memcpy(pMes->szFilePath, strRemoteFilePath.c_str(), pMes->dwFilePathLen);
+    if (bOpenExisted)
+    {
+        pMes->byReserve[0] = 1;
+    }
 
     int iMesLen = sizeof(CXFileOpenFile) - 1 + pMes->dwFilePathLen;
 
@@ -153,7 +168,7 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
     PCXFileRead pMes = (PCXFileRead)(pData);
     pMes->dwSeekType = CXFileTcpClient::current;
     pMes->dwReadLen = iWantReadLen;
-    pMes->uiBeginPos = 0;
+    pMes->iBeginPos = 0;
 
     int iMesLen = sizeof(CXFileRead);
 
@@ -171,11 +186,13 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
     iTransRet = m_dataClient.RecvPacket(pData, sizeof(CXFileReadReply)-1, iTransDataLen, dwMesCode);
     if (iTransRet != 0 && iTransRet != -8)
     {
+        DWORD dwEr = GetLastError();
         Close();
         return -4;
     }
     if (dwMesCode != CX_FILE_READ_REPLY_CODE)
     {
+        DWORD dwEr = GetLastError();
         Close();
         return -5;
     }
@@ -183,12 +200,14 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
     PCXFileReadReply pReply = (PCXFileReadReply)(pData);
     if (pReply->dwReplyCode != 200 && pReply->dwReplyCode != 205 && pReply->dwReplyCode != 204)
     {
+        DWORD dwEr = GetLastError();
         Close();
         return -6;
     }
 
     if (pReply->dwDataLen > iWantReadLen)
     {
+        DWORD dwEr = GetLastError();
         Close();
         return -7;
     }
@@ -200,21 +219,30 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
             Close();
             return -8;
         }
+        else if (iWantReadLen!= *piReadLen)
+        {
+            Close();
+            return -12;
+        }
     }
 
-    if (pReply->dwReplyCode == 203 ) //read to file end
+    if (pReply->dwReplyCode == 203 )//some error occurs in reading file, need to closed
     {
         return -9;
     }
-    else if(pReply->dwReplyCode == 204) //some error occurs in reading file, only read part of data
+    else if(pReply->dwReplyCode == 204) //read to file end 
     {
         return -10;
+    }
+    else if (pReply->dwReplyCode == 205) //some error occurs in reading file, only read part of data
+    {
+        return -11;
     }
 
     return iRet;
 }
 
-int  CXFileTcpClient::Write(const byte* pBuf, int iBufLen, int *piWrittenLen)
+int  CXFileTcpClient::Write(const byte* pBuf, int iBufLen, int *piWrittenLen, uint64 uiOffset, SEEKTYPE type)
 {
     int iRet = RETURN_SUCCEED;
     if (!IsOpen())
@@ -222,18 +250,19 @@ int  CXFileTcpClient::Write(const byte* pBuf, int iBufLen, int *piWrittenLen)
         return -2;
     }
 
-    m_cmmClient.SendHeartPacket();
+    //m_cmmClient.SendHeartPacket();
 
     DWORD dwBufferSize = 0;
     byte *pData = m_dataClient.GetSendBuffer(dwBufferSize);
     PCXFileWrite pMes = (PCXFileWrite)(pData);
+	DWORD dwPacketLen = iBufLen + sizeof(CXFileWrite) - 1;
 
     // not use the socket buffer to save data
     if (pBuf < pData || pBuf > (pData + dwBufferSize))
     {
-        if (iBufLen > dwBufferSize)
+        if (dwPacketLen > dwBufferSize)
         {
-            if (!m_dataClient.SetSendBufferSize(iBufLen + sizeof(CXFileWrite) - 1))
+            if (!m_dataClient.SetSendBufferSize(dwPacketLen))
             {
                 return -7;
             }
@@ -243,22 +272,25 @@ int  CXFileTcpClient::Write(const byte* pBuf, int iBufLen, int *piWrittenLen)
         memcpy(pMes->szData, pBuf, iBufLen);
     }
 
-    pMes->dwSeekType = CXFileTcpClient::current;
+    pMes->dwSeekType = type;
     pMes->dwDataLen = iBufLen;
-    pMes->uiBeginPos = 0;
+    pMes->iBeginPos = uiOffset;
     
-    int iMesLen = sizeof(CXFileWrite) - 1 + iBufLen;
 
     int iTransDataLen = 0;
-    int iTransRet = m_dataClient.SendPacket(pData, iMesLen, CX_FILE_WRITE_CODE);
+    int iTransRet = m_dataClient.SendPacket(pData, dwPacketLen, CX_FILE_WRITE_CODE);
     if (iTransRet != 0)
     {
         Close();
         return -3;
     }
 
+
+	pData = m_byPacketData;
+	memset(pData, 0, CLIENT_BUF_SIZE);
+
     DWORD dwMesCode = 0;
-    iTransRet = m_dataClient.RecvPacket(pData, dwBufferSize, iTransDataLen, dwMesCode);
+    iTransRet = m_dataClient.RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen, dwMesCode);
     if (iTransRet != 0)
     {
         Close();
@@ -276,10 +308,82 @@ int  CXFileTcpClient::Write(const byte* pBuf, int iBufLen, int *piWrittenLen)
         return -6;
     }
 
+    *piWrittenLen = iBufLen;
+
     return RETURN_SUCCEED;
 }
 
-int  CXFileTcpClient::Seek(uint64 pos, SEEKTYPE type)
+//write some blocks, these blocks have different offset
+int CXFileTcpClient::WriteManyBlocks(const byte* pBuf, int iBufLen, int *piWrittenLen)
+{
+    int iRet = RETURN_SUCCEED;
+    if (!IsOpen())
+    {
+        return -2;
+    }
+
+    //m_cmmClient.SendHeartPacket();
+
+    DWORD dwBufferSize = 0;
+    byte *pData = m_dataClient.GetSendBuffer(dwBufferSize);
+    PCXFileWrite pMes = (PCXFileWrite)(pData);
+    DWORD dwPacketLen = iBufLen + sizeof(CXFileWrite) - 1;
+
+    // not use the socket buffer to save data
+    if (pBuf < pData || pBuf >(pData + dwBufferSize))
+    {
+        if (dwPacketLen > dwBufferSize)
+        {
+            if (!m_dataClient.SetSendBufferSize(dwPacketLen))
+            {
+                return -7;
+            }
+            pData = m_dataClient.GetSendBuffer(dwBufferSize);
+        }
+        pMes = (PCXFileWrite)(pData);
+        memcpy(pMes->szData, pBuf, iBufLen);
+    }
+
+    pMes->dwSeekType = CXFileTcpClient::current;
+    pMes->dwDataLen = iBufLen;
+    pMes->iBeginPos = 0;
+
+    int iTransDataLen = 0;
+    int iTransRet = m_dataClient.SendPacket(pData, dwPacketLen, CX_FILE_WRITE_MANY_CODE);
+    if (iTransRet != 0)
+    {
+        Close();
+        return -3;
+    }
+
+	pData = m_byPacketData;
+	memset(pData, 0, CLIENT_BUF_SIZE);
+
+    DWORD dwMesCode = 0;
+    iTransRet = m_dataClient.RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen, dwMesCode);
+    if (iTransRet != 0)
+    {
+        Close();
+        return -4;
+    }
+    if (dwMesCode != CX_FILE_WRITE_MANY_REPLY_CODE)
+    {
+        Close();
+        return -5;
+    }
+    PCXCommonMessageReply pReply = (PCXCommonMessageReply)(pData);
+    if (pReply->dwReplyCode != 200)
+    {
+        Close();
+        return -6;
+    }
+
+    *piWrittenLen = iBufLen;
+
+    return RETURN_SUCCEED;
+}
+
+int  CXFileTcpClient::Seek(int64 pos, SEEKTYPE type)
 {
     if (!IsOpen())
     {
@@ -290,7 +394,7 @@ int  CXFileTcpClient::Seek(uint64 pos, SEEKTYPE type)
     memset(pData, 0, CLIENT_BUF_SIZE);
 	PCXFileSeek pMes = (PCXFileSeek)(pData);
     pMes->dwSeekType = type;
-    pMes->uiSeekPos = pos;
+    pMes->iSeekPos = pos;
     int iMesLen = sizeof(CXFileSeek);
 
     int iTransDataLen = 0;
@@ -378,18 +482,6 @@ int CXFileTcpClient::Close()
     return RETURN_SUCCEED;
 }
 
-void CXFileTcpClient::SetRemoteServerInfo(string strRemoteIP, unsigned short unRemotePort,
-    string strRemoteUser, string strRemotePassword)
-{
-    m_strRemoteIP = strRemoteIP;
-    m_unRemotePort = unRemotePort;
-    m_strRemoteUser = strRemoteUser;
-    m_strRemotePassword = strRemotePassword;
-    m_cxSession.SetUserInfo(m_strRemoteUser, m_strRemotePassword);
-    CXSocketAddress addr(m_strRemoteIP.c_str(), m_unRemotePort);
-    m_cxSession.SetRemoteAddress(addr);
-}
-
 int CXFileTcpClient::GetFileLength(uint64 & uiFileLength)
 {
     if (!IsOpen())
@@ -438,21 +530,91 @@ int CXFileTcpClient::GetFileLength(uint64 & uiFileLength)
     return RETURN_SUCCEED;
 }
 
-byte * CXFileTcpClient::GetSendBuffer(DWORD &dwBufSize)
+
+int  CXFileTcpClient::GetCurrentPosition(uint64 & uiPos)
 {
-    DWORD dwBufferSize = 0;
-    byte *pData = m_dataClient.GetSendBuffer(dwBufferSize);
-    memset(pData, 0, dwBufferSize);
-    dwBufSize = dwBufferSize - sizeof(CXFileWrite);
-    return (pData+ sizeof(CXFileWrite));
+    if (!IsOpen())
+    {
+        return -2;
+    }
+
+    byte *pData = m_byPacketData;
+    memset(pData, 0, CLIENT_BUF_SIZE);
+    int iMesLen = 0;
+
+    int iTransDataLen = 0;
+    int iTransRet = m_cmmClient.SendPacket(pData, iMesLen, CX_FILE_GET_CUR_POS_CODE);
+    if (iTransRet != 0)
+    {
+        Close();
+        return -3;
+    }
+
+    memset(pData, 0, CLIENT_BUF_SIZE);
+
+    DWORD dwMesCode = 0;
+    iTransRet = m_cmmClient.RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen, dwMesCode);
+    if (iTransRet != 0)
+    {
+        Close();
+        return -4;
+    }
+    if (dwMesCode != CX_FILE_GET_CUR_POS_REPLY_CODE)
+    {
+        Close();
+        return -5;
+    }
+    PCXCommonMessageReply pReply = (PCXCommonMessageReply)(pData);
+    if (pReply->dwReplyCode != 200)
+    {
+        Close();
+        return -6;
+    }
+
+    uiPos = ((uint64)pReply->dwValue1) << 32 | pReply->dwValue2;
+
+
+    return RETURN_SUCCEED;
 }
 
-byte * CXFileTcpClient::GetRecvBuffer(DWORD &dwBufSize)
+//notify the peer to modify the size of the received buffer 
+int CXFileTcpClient::SetPeerRecvBufSize(DWORD dwSize)
 {
-    DWORD dwBufferSize = 0;
-    byte *pData = m_dataClient.GetRealRecvBuffer(dwBufferSize);
-    memset(pData, 0, dwBufferSize);
-    dwBufSize = dwBufferSize - sizeof(CXFileReadReply);
-    return (pData + sizeof(CXFileReadReply));
+    byte *pData = m_byPacketData;
+    memset(pData, 0, CLIENT_BUF_SIZE);
+    PCXCommonMessage pMes = (PCXCommonMessage)(pData);
+    pMes->dwValue1 = dwSize;
+    int iMesLen = sizeof(CXCommonMessage);
+
+    int iTransDataLen = 0;
+    int iTransRet = m_cmmClient.SendPacket(pData, iMesLen, CX_SET_RECV_BUF_SIZE_CODE);
+    if (iTransRet != 0)
+    {
+        Close();
+        return -3;
+    }
+
+    memset(pData, 0, CLIENT_BUF_SIZE);
+
+    DWORD dwMesCode = 0;
+    iTransRet = m_cmmClient.RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen, dwMesCode);
+    if (iTransRet != 0)
+    {
+        Close();
+        return -4;
+    }
+    if (dwMesCode != CX_SET_RECV_BUF_SIZE_REPLY_CODE)
+    {
+        Close();
+        return -5;
+    }
+    PCXCommonMessageReply pReply = (PCXCommonMessageReply)(pData);
+    if (pReply->dwReplyCode != 200)
+    {
+        Close();
+        return -6;
+    }
+
+    return RETURN_SUCCEED;
 }
 

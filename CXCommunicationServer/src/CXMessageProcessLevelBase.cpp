@@ -19,28 +19,27 @@ Description£º
 #include "CXPacketCodeDefine.h"
 #include "CXConnectionsManager.h"
 #include "CXCommunicationServer.h"
+#include "CXGuidObject.h"
 //#include "PlatformDataTypeDefine.h"
+#include "PlatformFunctionDefine.h"
 
 using namespace CXCommunication;
 void* ThreadProcess(void* lpvoid);
+
+//extern CXSpinLock g_lock;
+//extern int g_iTotalProcessMessage;
 
 CXMessageProcessLevelBase::CXMessageProcessLevelBase()
 {
     m_pMessageQueue = NULL;
     m_bStart = false;
-    m_pSessionLevelProcess = NULL;
-    m_pUserMessageProcess = NULL;
+	m_pLogHandle = NULL;
+    m_pRPCObjectManager = NULL;
 }
 
 
 CXMessageProcessLevelBase::~CXMessageProcessLevelBase()
 {
-    if (m_pSessionLevelProcess)
-        delete m_pSessionLevelProcess;
-    if (m_pUserMessageProcess)
-        delete m_pUserMessageProcess;
-    m_pSessionLevelProcess = NULL;
-    m_pUserMessageProcess = NULL;
 }
 
 int  CXMessageProcessLevelBase::Run()
@@ -62,6 +61,8 @@ int CXMessageProcessLevelBase::ProcessMessage()
 {
     int iRet = 0;
     int iLoopNum = 0;
+	int64 iBeginTime = 0;
+    CXGuidObject guidObj(false);
     CXMessageQueue * pQueue = GetMessageQueue();
     while (IsStart())
     {
@@ -73,91 +74,104 @@ int CXMessageProcessLevelBase::ProcessMessage()
             while (pMes != NULL)
             {
                 CXConnectionObject *pCon = (CXConnectionObject*)pMes->pConObj;
-                if (pMes != NULL)
+                if (pCon != NULL)
                 {
                     pCon->AddProcessPacketNumber();
                 }
+				else
+				{
+					char szInfo[1024] = { 0 };
+					sprintf_s(szInfo, 1024, "Find a incorrect packet, the connection object is empty,pMes=%x\n", (byte*)pMes);
+					m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+					return -1;
+				}
 
-                if (pCon->GetSession() == NULL)
+				iBeginTime = pCon->GetCurrentTimeMS(NULL);
+                iRet = 0;
+
+                CXConnectionSession * pSession = (CXConnectionSession *)pCon->GetSession();
+                string strObjectGuid = guidObj.ConvertGuid(pMes->bodyData.byObjectGuid);
+
+                bool bLoginMes = false;
+                int iLoop = 2;
+                while (--iLoop>0)
                 {
-                    if (pMes->bodyData.dwMesCode != CX_SESSION_LOGIN_CODE)
+                    if (strObjectGuid != "")
                     {
-                        printf("The first packet is not the login packet of the session\n");
-                    }
-                    else
-                    {
-                        CXConnectionSession * pSession = NULL;
-                        if (m_pSessionLevelProcess == NULL)
+                        CXRPCObjectServer * pObjectServer = NULL;
+                        DWORD dwMessageCode = pMes->bodyData.dwMesCode;
+                        if (dwMessageCode == CX_SESSION_LOGIN_CODE
+                            || dwMessageCode == CX_SESSION_LOGOUT_CODE
+                            || dwMessageCode == CX_SESSION_SETITING_CODE)
                         {
-                            m_pSessionLevelProcess = new CXSessionMessageProcess();
-                        }
-
-                        iRet = m_pSessionLevelProcess->SessionLogin(pMes,&pSession);
-                        if (iRet == RETURN_SUCCEED)
-                        {
-                            //pCon->SetSession((void*)pSession);
+                            bLoginMes = true;
+                            pObjectServer = m_pRPCObjectManager->GetRPCObject(strObjectGuid);
+                            if (pObjectServer == NULL)
+                            {
+                                char szInfo[1024] = { 0 };
+                                sprintf_s(szInfo, 1024, "Not found the object %s, maybe not registered\n", strObjectGuid.c_str());
+                                m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+                                //base login object
+                                strObjectGuid = "{6E34084E-970B-427F-A973-2763A19D7C07}";
+                                continue;
+                            }
                         }
                         else
                         {
-                            printf("Login fails\n");
+                            pSession->Lock();
+                            pObjectServer = (CXRPCObjectServer *)pSession->GetData(strObjectGuid,false);
+                            if (pObjectServer != NULL)
+                            {
+                                pSession->UnLock();
+                            }
+                            else
+                            {
+                                pObjectServer = m_pRPCObjectManager->GetRPCObject(strObjectGuid);
+                                if (pObjectServer != NULL)
+                                {
+                                    pSession->SetData(strObjectGuid, (void*)pObjectServer,false);
+                                }
+                                else
+                                {
+                                    char szInfo[1024] = { 0 };
+                                    sprintf_s(szInfo, 1024, "Not found the object %s, maybe not registered\n", strObjectGuid.c_str());
+                                    m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+                                }
+                                pSession->UnLock();
+                            }
+                        }
+
+                        if (pObjectServer != NULL)
+                        {
+                            iRet = pObjectServer->ProcessMessage(pMes);
+                            if (iRet != RETURN_SUCCEED)
+                            {
+                                printf("Process message fails\n");
+                                if (iRet == -2)
+                                {
+                                    pCon->Lock();
+                                    ProcessConnectionError(pCon);
+                                    pCon->UnLock();
+                                }
+                            }
+                        }
+                        if (bLoginMes)
+                        {
+                            //the login object can be a unique object
+                            if(!pObjectServer->IsUniqueInstance())
+                                delete pObjectServer;
                         }
                     }
-                }
-                else
-                {
-                    CXConnectionSession * pSession = (CXConnectionSession *)pCon->GetSession();
-                    DWORD dwMessageCode = pMes->bodyData.dwMesCode;
-                    switch (dwMessageCode)
+                    else
                     {
-                    case CX_SESSION_LOGIN_CODE:
-                        break;
-                    case CX_SESSION_LOGOUT_CODE:
-                        iRet = m_pSessionLevelProcess->SessionLogout(pMes, *pSession);
-                        if (iRet != RETURN_SUCCEED)
-                        {
-                            printf("SessionLogout fails\n");
-                            if (iRet == -2)
-                            {
-                                pCon->Lock();
-                                ProcessConnectionError(pCon);
-                                pCon->UnLock();
-                            }
-                        }
-                        break;
-                    case CX_SESSION_SETITING_CODE:
-
-                        iRet = m_pSessionLevelProcess->SessionSetting(pMes, *pSession);
-                        if (iRet != RETURN_SUCCEED)
-                        {
-                            printf("SessionSetting fails\n");
-                            if (iRet == -2)
-                            {
-                                pCon->Lock();
-                                ProcessConnectionError(pCon);
-                                pCon->UnLock();
-                            }
-                        }
-                        break;
-                    default:
-                        if (m_pUserMessageProcess == NULL)
-                        {
-                            m_pUserMessageProcess = new CXUserMessageProcess();
-                        }
-                        iRet = m_pUserMessageProcess->OnReceivedMessage(pMes, pCon, pSession);
-                        if (iRet != RETURN_SUCCEED)
-                        {
-                            printf("Process message fails\n");
-                            if (iRet == -2)
-                            {
-                                pCon->Lock();
-                                ProcessConnectionError(pCon);
-                                pCon->UnLock();
-                            }
-                        }
-
-                        break;
+                        char szInfo[1024] = { 0 };
+                        sprintf_s(szInfo, 1024, "Receive a incorrect packet, the object guid is empty\n");
+                        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
                     }
+                    break;
                 }
+
+				pCon->OutputJournal(pMes,iBeginTime);
                 pCon->FreeBuffer(pMes);
 
                 //<Process the closing event of this socket>
@@ -169,6 +183,10 @@ int CXMessageProcessLevelBase::ProcessMessage()
                     if (pCon->GetState() == CXConnectionObject::CLOSING)//closed
                     {
                         //ProcessConnectionError(pCon);
+                        char szInfo[1024] = {0};
+                        sprintf_s(szInfo,1024, "Close a closing connection after process a message,connection id=%lld,error code is %d,desc is '%s'\n",
+                            pCon->GetConnectionIndex(),errno,strerror(errno));
+                        //m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
                         CXCommunicationServer *pServer = (CXCommunicationServer *)pCon->GetServer();
                         pServer->CloseConnection(*pCon, SOCKET_CLOSED,false);
                     }
@@ -179,6 +197,9 @@ int CXMessageProcessLevelBase::ProcessMessage()
                     pCon->ReduceReceivedPacketNumber();
                 }
 
+                //g_lock.Lock();
+                //g_iTotalProcessMessage++;
+                //g_lock.Unlock();
 
                 pMes = (PCXMessageData)pQueue->GetMessage();
                 /*
@@ -214,6 +235,12 @@ int CXMessageProcessLevelBase::ProcessConnectionError(CXConnectionObject * pCon)
 {
     CXCommunicationServer *pServer = (CXCommunicationServer *)pCon->GetServer();
     CXConnectionsManager & connectionsManager = pServer->GetConnectionManager();
+
+    char szInfo[1024] = {0};
+    sprintf_s(szInfo,1024, "Failed to process message,close this connection,connection id=%lld,error code is %d,desc is '%s'\n",
+                  pCon->GetConnectionIndex(),errno,strerror(errno));
+    //m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
     pServer->CloseConnection(*pCon, ERROR_IN_PROCESS,false);
     return 0;
 }

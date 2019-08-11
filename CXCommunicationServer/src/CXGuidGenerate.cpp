@@ -63,15 +63,10 @@ string CXGuidGenerate::GenerateGuid()
     }
 
 #else
-    uuid_t uu;
-    int i;
-    uuid_generate(uu);
-
-    for (i = 0; i<16; i++)
-    {
-        sprintf_s(buf, sizeof(buf), "%02X-", uu[i]);
-        strGuid += buf;
-    }
+    uuid_t guid;
+    uuid_generate(guid);
+    uuid_unparse_upper(guid, buf);
+    strGuid = buf;
 #endif//WIN32
     return strGuid;
 }

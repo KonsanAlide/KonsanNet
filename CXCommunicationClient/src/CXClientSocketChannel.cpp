@@ -34,6 +34,16 @@ CXClientSocketChannel::CXClientSocketChannel()
     m_strSessionID = "";
     m_strVerifyCode = "";
     m_bIsOpened = false;
+
+    memset(m_byLoginObjGuid, 0, CX_GUID_LEN);
+    string strName = "CXConnectionLoginV1";
+    map<string, string>::const_iterator  it = g_mapRPCObjectGuid.find(strName);
+    if (it != g_mapRPCObjectGuid.end())
+    {
+        string strObjectGuid = it->second;
+        CXGuidObject guidObject(false);
+        guidObject.ConvertGuid(strObjectGuid, m_byLoginObjGuid);
+    }
 }
 
 
@@ -160,13 +170,19 @@ int CXClientSocketChannel::Login(const string &strUserName, const string &strPas
 
     int iMesLen = sizeof(CXSessionLogin) - 1 + pMes->dwUserDataLen;
 
+    byte byOldGuid[CX_GUID_LEN] = {0};
+    GetRPCObjectGuid(byOldGuid);
+    SetRPCObjectGuid(m_byLoginObjGuid);
     int iTransDataLen = 0;
     int iTransRet = SendPacket(pData, iMesLen, CX_SESSION_LOGIN_CODE);
     if (iTransRet != 0)
     {
         Close();
+        SetRPCObjectGuid(byOldGuid);
         return -3;
     }
+    SetRPCObjectGuid(byOldGuid);
+
     memset(pData, 0, CLIENT_BUF_SIZE);
     DWORD dwMesCode = 0;
     iTransRet = RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen, dwMesCode);

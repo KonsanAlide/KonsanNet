@@ -45,7 +45,12 @@ CXFile64::CXFile64()
 {
     m_strFilePath = "";
     m_bIsOpened = false;
-    m_file = NULL;
+#ifdef WIN32
+    m_file = (HANDLE)-1;
+#else
+    m_file = -1;
+#endif
+
 }
 
 CXFile64::~CXFile64()
@@ -53,11 +58,13 @@ CXFile64::~CXFile64()
 
 }
 
-bool CXFile64::Open(string strFilePath, OPENTYPE type, DWORD dwFlagsAndAttributes)
+bool CXFile64::Open(string strFilePath, OPENTYPE type, DWORD dwFlagsAndAttributes, BOOL bOnlyOpenExistingFile)
 {
 
 #ifdef WIN32
     DWORD dwDesiredAccess = 0;
+
+    //if this file not exist , create it and open
     DWORD dwCreateFlag = OPEN_ALWAYS;
     DWORD dwShareFlag = FILE_SHARE_READ | FILE_SHARE_WRITE;
     bool bTruncateFile = true;
@@ -65,12 +72,18 @@ bool CXFile64::Open(string strFilePath, OPENTYPE type, DWORD dwFlagsAndAttribute
     if (dwFlagsAndAttributes == 0)
         dwFlagsAndAttributes = FILE_ATTRIBUTE_NORMAL;
 
-
+    if (bOnlyOpenExistingFile)
+    {
+        dwCreateFlag = OPEN_EXISTING;
+    }
 
     switch (type)
     {
     case CXFile64::modeRead:
         dwDesiredAccess = GENERIC_READ;
+        //only open the existing file
+        dwCreateFlag = OPEN_EXISTING;
+        bTruncateFile = false;
         break;
     case CXFile64::modeWrite:
         dwDesiredAccess = GENERIC_WRITE;
@@ -80,12 +93,10 @@ bool CXFile64::Open(string strFilePath, OPENTYPE type, DWORD dwFlagsAndAttribute
         break;
     case CXFile64::modeNoTruncateWrite:
         dwDesiredAccess = GENERIC_WRITE;
-        dwCreateFlag = OPEN_ALWAYS;
         bTruncateFile = false;
         break;
     case CXFile64::modeNoTruncateReadWrite:
         dwDesiredAccess = GENERIC_READ | GENERIC_WRITE;
-        dwCreateFlag = OPEN_ALWAYS;
         bTruncateFile = false;
         break;
     default:
@@ -100,18 +111,16 @@ bool CXFile64::Open(string strFilePath, OPENTYPE type, DWORD dwFlagsAndAttribute
     // add the TRUNCATE_EXISTING bit to the dwCreateFlag .
     if (INVALID_FILE_ATTRIBUTES != dwAttrib && 0 == (dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
     {
-        if (bTruncateFile)
+        if (bTruncateFile && (dwDesiredAccess&GENERIC_WRITE))
         {
-            dwCreateFlag = OPEN_EXISTING;
-            if (dwDesiredAccess&GENERIC_WRITE) //contain the GENERIC_WRITE mode
-            {
-                dwCreateFlag |= TRUNCATE_EXISTING;
-            }
+             dwCreateFlag |= TRUNCATE_EXISTING;
         }
+        /*
         else
         {
             dwCreateFlag = OPEN_EXISTING;
         }
+        */
     }
 
 
@@ -122,11 +131,6 @@ bool CXFile64::Open(string strFilePath, OPENTYPE type, DWORD dwFlagsAndAttribute
     if (m_file == INVALID_HANDLE_VALUE)
     {
         return false;
-    }
-    else
-    {
-        m_strFilePath = strFilePath;
-        return true;
     }
 #else
 
@@ -179,10 +183,11 @@ bool CXFile64::Open(string strFilePath, OPENTYPE type, DWORD dwFlagsAndAttribute
     if (m_file <= 0) {
         return false;
     }
-    m_strFilePath = strFilePath;
 
 #endif // WIN32
 
+    m_strFilePath = strFilePath;
+    m_bIsOpened = true;
     return true;
 }
 bool  CXFile64::Read(byte* pBuf, DWORD dwWantReadLen, DWORD &dwReadLen)
@@ -216,15 +221,6 @@ bool  CXFile64::Read(byte* pBuf, DWORD dwWantReadLen, DWORD &dwReadLen)
 bool CXFile64::Seek(int64 pos, SEEKTYPE type)
 {
     uint64  uiFileLength = 0;
-    if (!GetFileLength(uiFileLength))
-    {
-        return false;
-    }
-
-    if (pos > uiFileLength)
-    {
-        return false;
-    }
 
 #ifdef WIN32
     if (m_file == INVALID_HANDLE_VALUE)
@@ -232,6 +228,15 @@ bool CXFile64::Seek(int64 pos, SEEKTYPE type)
         return false;
     }
 
+    //in windows system , if the file is a disk or a volume,
+    //this function will return error
+    if (GetFileLength(uiFileLength))
+    {
+        if (pos > uiFileLength)
+        {
+            return false;
+        }
+    }
 
     LARGE_INTEGER liPos;
     liPos.QuadPart = 0;
@@ -281,6 +286,16 @@ bool CXFile64::Seek(int64 pos, SEEKTYPE type)
         return false;
     }
 #else
+
+    if (!GetFileLength(uiFileLength))
+    {
+        return false;
+    }
+
+    if (pos > uiFileLength)
+    {
+        return false;
+    }
 
     uint64 uiOldPos = ::lseek(m_file, SEEK_CUR, 0);
     int iWhence = 0;
@@ -427,24 +442,34 @@ bool CXFile64::TruncateFile(uint64 uiFileLen)
 
 bool CXFile64::Close()
 {
-#ifdef WIN32
-    if (m_file == INVALID_HANDLE_VALUE)
-    {
-        return false;
-    }
-    if (::CloseHandle(m_file))
+    if (!m_bIsOpened)
     {
         return true;
     }
-    return false;
+
+#ifdef WIN32
+    if (m_file == INVALID_HANDLE_VALUE)
+    {
+        return true;
+    }
+    if (!::CloseHandle(m_file))
+    {
+        return false;
+    }
+    m_file = INVALID_HANDLE_VALUE;
 
 #else
     if (m_file <= 0)
     {
-        return false;
+        return true;
     }
     close(m_file);
+    m_file = -1;
+    
 #endif // WIN32
+
+    m_bIsOpened = false;
+    return true;
 
 }
 
@@ -460,6 +485,7 @@ bool CXFile64::GetFileLength(uint64 & uiFileLength)
     BOOL bRet = ::GetFileSizeEx(m_file,&liSize);
     if (!bRet)
     {
+        DWORD dwError = GetLastError();
         return false;
     }
     uiFileLength = liSize.QuadPart;

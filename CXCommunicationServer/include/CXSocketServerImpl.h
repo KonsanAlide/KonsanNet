@@ -23,12 +23,11 @@ Description£º
 
 namespace CXCommunication
 {
-    //have lock by CXConnectionObject::lock
     typedef int (*POnReadCallback)(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-        DWORD dwTransDataOfBytes);
+        DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
     //typedef int (*POnWriteCallback)(CXConnectionObject &conObj,PCXBufferObj pBufObj,
     //    DWORD dwTransDataOfBytes);
-    //have lock by CXConnectionObject::lock
+    
     typedef int (*POnClose)(CXConnectionObject& conObj, ConnectionClosedType emClosedType);
     typedef int(*POnAccept)(void *pServer, cxsocket sock,sockaddr_in &addrRemote);
 
@@ -59,8 +58,8 @@ namespace CXCommunication
             void *  GetServer() { return m_pServer; }
 
             virtual int OnAccept(void *pServer,cxsocket sock, sockaddr_in &addrRemote) = 0;
-            virtual int OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-                DWORD dwTransDataOfBytes)=0;
+            virtual int OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,DWORD dwTransDataOfBytes,
+				byte* pbyThreadCache, DWORD dwCacheLen)=0;
             virtual int OnWrite(CXConnectionObject& conObj)=0;
             virtual void OnClose(CXConnectionObject& conObj, ConnectionClosedType emClosedType)=0;
 

@@ -32,13 +32,13 @@ class CXFile64
 public:
     enum SEEKTYPE
     {
-        begin,
+        begin = 0,
         current,
         end
     };
     enum OPENTYPE
     {
-        modeRead,
+        modeRead=0,
         modeWrite,
         modeReadWrite,
         modeNoTruncateWrite,
@@ -49,7 +49,7 @@ public:
     CXFile64();
     virtual ~CXFile64();
 
-    bool Open(string strFilePath,OPENTYPE type, DWORD dwFlagsAndAttributes=0);
+    bool Open(string strFilePath,OPENTYPE type, DWORD dwFlagsAndAttributes=0,BOOL bOnlyOpenExistingFile=FALSE);
 
     //return value : ==true, if read to end of the file, the dwReadLen will be set to zero.
     bool Read(byte* pBuf, DWORD dwWantReadLen, DWORD &dwReadLen);
@@ -70,7 +70,6 @@ public:
 
 private:
     string  m_strFilePath;
-    bool    m_bRunning;
     bool    m_bIsOpened;
 #ifdef WIN32
     HANDLE m_file;

@@ -19,6 +19,7 @@ Description£º
 #include "CXConnectionSession.h"
 #include <memory.h>
 #include <time.h>
+#include "CXRPCObjectServer.h"
 namespace CXCommunication
 {
     CXConnectionSession::CXConnectionSession()
@@ -123,32 +124,53 @@ namespace CXCommunication
         m_pMmainConnetion = NULL;
         m_strSessionGuid = "";
         m_strVerificationCode = "";
+
+        Lock();
+        CXRPCObjectServer *pObj = NULL;
+        unordered_map<string, void*>::iterator it = m_mapData.begin();
+        for (; it != m_mapData.end();)
+        {
+            pObj = (CXRPCObjectServer *)it->second;
+            pObj->Destroy();
+            delete pObj;
+            it=m_mapData.erase(it);
+        }
+        
+        UnLock();
+
     }
 
-    void  CXConnectionSession::SetData(string strKey, void *pData)
+    void  CXConnectionSession::SetData(string strKey, void *pData,bool bLockBySelf)
     {
-        Lock();
+        if(bLockBySelf)
+            Lock();
         m_mapData[strKey] = pData;
-        UnLock();
+        if(bLockBySelf)
+            UnLock();
     }
-    void *CXConnectionSession::GetData(string strKey)
+    void *CXConnectionSession::GetData(string strKey,bool bLockBySelf)
     {
         void *pData = NULL;
-        Lock();
+        if(bLockBySelf)
+            Lock();
         pData = m_mapData[strKey];
-        UnLock();
+        if(bLockBySelf)
+            UnLock();
         return pData;
     }
 
-    void CXConnectionSession::RemoveData(string strKey)
+    void CXConnectionSession::RemoveData(string strKey,bool bLockBySelf)
     {
-        Lock();
+        if(bLockBySelf)
+            Lock();
         unordered_map<string, void*>::iterator it = m_mapData.find(strKey);
         if (it != m_mapData.end())
         {
             m_mapData.erase(it);
         }
-        UnLock();
+
+        if(bLockBySelf)
+            UnLock();
     }
 
     int  CXConnectionSession::GetConnectionNumber()
@@ -176,7 +198,7 @@ namespace CXCommunication
         m_tmBeginOfVerification = time(NULL);
 
         // the default time out is 10 seconds
-        m_iTimeOutSecondsOfVerification =10;
+        m_iTimeOutSecondsOfVerification =60;
     }
 
     //verify the verification code

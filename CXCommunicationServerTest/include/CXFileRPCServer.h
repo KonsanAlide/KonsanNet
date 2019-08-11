@@ -1,5 +1,5 @@
 /****************************************************************************
-Copyright (c) 2018 Charles Yang
+Copyright (c) 2018-2019 Charles Yang
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,26 +15,37 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#ifndef CXUSERMESSAGEPROCESSBASE_H
-#define CXUSERMESSAGEPROCESSBASE_H
+#ifndef __CXFILERPCSERVER_H__
+#define __CXFILERPCSERVER_H__
 
 #include "CXConnectionObject.h"
 #include "CXConnectionSession.h"
 #include "CXCommonPacketStructure.h"
-
+#include "CXRPCObjectServer.h"
+#include "CXFile64.h"
 namespace CXCommunication
 {
-    class CXUserMessageProcessBase
+    class CXFileRPCServer : public CXRPCObjectServer
     {
     public:
-        CXUserMessageProcessBase();
-        ~CXUserMessageProcessBase();
+        CXFileRPCServer();
+        ~CXFileRPCServer();
 
-        virtual int OnReceivedMessage(const PCXMessageData pMes, CXConnectionObject* pCon,
-            CXConnectionSession *pSession)=0;
-        
-        virtual int SendData(CXConnectionObject * pCon,const byte *pbyData,DWORD dwDataLen)=0;
+        virtual string GetObjectName() { return "CXFileTcpV1"; }
+
+        virtual int ProcessMessage(PCXMessageData pMes);
+
+        virtual int SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen);
+
+        virtual CXRPCObjectServer* CreateObject();
+
+        virtual void Destroy();
+
+        virtual void RecordSlowOps(PCXMessageData pMes);
+
+    private:
+        CXFile64 m_file;
     };
 }
-#endif //CXUSERMESSAGEPROCESSBASE_H
+#endif //__CXFILERPCSERVER_H__
 

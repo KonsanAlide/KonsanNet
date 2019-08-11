@@ -64,13 +64,12 @@ namespace CXCommunication
             string GetSessionGuid() { return m_strSessionGuid; }
             void   SetSesssionGuid(string strGuid) { m_strSessionGuid= strGuid; }
             string GetVerificationCode() { return m_strVerificationCode; }
-           
 
             void Destroy();
 
-            void SetData(string strKey,void *pData);
-            void *GetData(string strKey);
-            void RemoveData(string strKey);
+            void SetData(string strKey,void *pData,bool bLockBySelf=true);
+            void *GetData(string strKey,bool bLockBySelf=true);
+            void RemoveData(string strKey,bool bLockBySelf=true);
 
             int  GetConnectionNumber();
 

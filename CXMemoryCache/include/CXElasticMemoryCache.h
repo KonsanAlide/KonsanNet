@@ -1,5 +1,5 @@
 /****************************************************************************
-Copyright (c) 2018 Charles Yang
+Copyright (c) 2018-2019 Charles Yang
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ Description£ºThis class manage a list of some large memory blocks,
              This class have a spinlock to solve the problem of thread synchronization.
 *****************************************************************************/
 
-#ifndef CXMEMORYCACHE_H
-#define CXMEMORYCACHE_H
+#ifndef CXELASTICMEMORYCACHE_H
+#define CXELASTICMEMORYCACHE_H
 
 #ifdef WIN32
 #include <windows.h>  
@@ -37,25 +37,21 @@ Description£ºThis class manage a list of some large memory blocks,
 
 #include "PlatformDataTypeDefine.h"
 #include "CXSpinLock.h"
-
+#include "CXMemoryCache.h"
 #include <stdio.h>
 #include <list>
+#include "CXSpinLock.h"
 
 using namespace std;
 
-class CXMemoryCache
+class CXElasticMemoryCache
 {
 public:
-    struct cx_cache_obj
-    {
-        CXMemoryCache*pThis;
-        cx_cache_obj *pNext;
-        byte *pData;
-    };
 
 public:
-    CXMemoryCache();
-    virtual ~CXMemoryCache();
+	CXElasticMemoryCache();
+    virtual ~CXElasticMemoryCache();
+
     //initialize the first memory block
     //iObjectSize: the object size in the memory cache
     //iObjectNumber: the object number in the memory cache
@@ -69,61 +65,28 @@ public:
     //free a object
     void FreeObject(void*pObject);
 
-    bool IsHaveObject() { return m_pEmptyObjectListHead!=NULL; }
+    bool IsHaveObject() { return m_pCacheObj->IsHaveObject(); }
 
-    int  GetObjectSize() { return m_iObjectSize; }
+    int  GetObjectSize() { return m_pCacheObj->GetObjectSize(); }
 
-	DWORD GetUsingNodesNum() { return m_dwNumberOfUsingNodes; }
-	DWORD GetTotalNodesNum() { return m_dwNumberOfTotalNodes; }
-	DWORD GetNumberOfBlocks() { return m_nMemoryBlocksNumber; }
-
-	void  SetElasticObj(void *pObj) { m_pElasticObj= pObj; }
-	void* GetElasticObj() { return m_pElasticObj; }
+	void  SetAutoCompactMemory(bool bSet) { m_bAutoCompactMemory = bSet; }
+	bool  IsAutoCompactMemory() { return m_bAutoCompactMemory; }
 
     //get the unused seconds for this cache
     int64 GetUnusedState(DWORD &dwUsingNodes);
 
-    void  RecordUsedTime();
-
-protected:
-    //allocate a new memory block, add to the end of the m_pBlockList
-    //return value: ==0 succeed ,==-1 allocate a memory block failed
-    int  AllocateMemoryBlock();
-
-    //initialize the cache really
-    int RealInitialize();
+private:
+	bool  CompactMemory();
 
 private:
+	CXMemoryCache *m_pCacheObj;
+	CXMemoryCache *m_pCacheObjBak;
+	CXMemoryCache m_firstObj;
+	CXMemoryCache m_secondObj;
 
-    //the head pointer of the empty memory object list
-    cx_cache_obj *m_pEmptyObjectListHead;
-    //the end pointer of the empty memory object list
-    cx_cache_obj *m_pEmptyObjectListEnd;
-
-    //the head pointer of the memory block list
-    cx_cache_obj *m_pBlockListHead;
-    //the end pointer of the memory block list
-    cx_cache_obj *m_pBlockListEnd;
-
-    //the number of the memory blocks
-    int   m_nMemoryBlocksNumber;
-
-    //the number of the objects in a memory block
-    int   m_iObjectNumInMB;
-    int   m_iObjectSize;
-
-    CXSpinLock m_lock;
-    bool  m_bInited;
-
-    list<cx_cache_obj*> m_lstBlocks;
-
-	DWORD m_dwNumberOfUsingNodes;
-	DWORD m_dwNumberOfTotalNodes;
-
-	// the elastic memory object pointer
-	void *m_pElasticObj;
-
-    int64 m_iLastUsedTime;
+	bool  m_bAutoCompactMemory;
+	bool  m_isSwapping;
+	CXSpinLock m_lock;
 };
 
-#endif // CXMEMORYCACHE_H
+#endif // CXELASTICMEMORYCACHE_H

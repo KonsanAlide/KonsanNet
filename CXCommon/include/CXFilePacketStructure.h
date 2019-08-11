@@ -37,7 +37,7 @@ typedef struct _CX_FILE_OPEN_FILE
 typedef struct _CX_FILE_SEEK
 {
     DWORD dwSeekType;
-    uint64 uiSeekPos;
+    int64 iSeekPos;
 }CXFileSeek, *PCXFileSeek;
 #endif
 
@@ -45,7 +45,7 @@ typedef struct _CX_FILE_SEEK
 typedef struct _CX_FILE_READ
 {
     DWORD dwSeekType;
-    uint64 uiBeginPos;
+    int64 iBeginPos;
     DWORD dwReadLen;
 }CXFileRead, *PCXFileRead;
 #endif
@@ -63,8 +63,8 @@ typedef struct _CX_FILE_READ_REPLY
 typedef struct _CX_FILE_WRITE
 {
     DWORD dwSeekType;
-    uint64 uiBeginPos;
-    DWORD  dwDataLen;
+    int64 iBeginPos;
+    DWORD dwDataLen;
     char  szData[1];
 }CXFileWrite, *PCXFileWrite;
 #endif

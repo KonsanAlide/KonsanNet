@@ -18,6 +18,10 @@ Description£º
 #include "CXCommunicationServer.h"
 #include "CXMessageProcessLevelBase.h"
 #include "PlatformFunctionDefine.h"
+#include <time.h>
+//extern CXSpinLock g_lock;
+//extern int g_iTotalCloseNum;
+//extern int g_iTotalProcessCloseNum;
 
 using namespace CXCommunication;
 
@@ -27,10 +31,11 @@ CXCommunicationServer::CXCommunicationServer()
     m_uiTotalReceiveBuffers = 0;
     m_pDataParserHandle = NULL;
 
-    m_pUserMessageProcessHandle=NULL;
-    m_pSessionMessageProcessHandle = NULL;
-
     m_pLogHandle = NULL;
+
+	m_pJouralLogHandle = NULL;
+
+    srand((unsigned)time(NULL));
 }
 
 CXCommunicationServer::~CXCommunicationServer()
@@ -59,6 +64,8 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
         return -2;
     }
 
+    m_connectionsManager.SetLogHandle(m_pLogHandle);
+
     m_socketServerKernel.SetOnReadCallbackFun(CXCommunicationServer::OnRecv);
     m_socketServerKernel.SetOnCloseCallbackFun(CXCommunicationServer::OnClose);
     m_socketServerKernel.SetOnAcceptCallbackFun(CXCommunicationServer::OnAccept);
@@ -84,8 +91,8 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
             {
                 CXMessageProcessLevelBase * pProcessObj = new CXMessageProcessLevelBase();
                 pProcessObj->SetMessageQueue(pQueue);
-                pProcessObj->SetUserMessageProcessHandle(m_pUserMessageProcessHandle);
-                pProcessObj->SetSessionMessageProcessHandle(m_pSessionMessageProcessHandle);
+				pProcessObj->SetLogHandle(m_pLogHandle);
+                pProcessObj->SetRPCObjectManager(&m_rpcObjectManager);
                 iRet = pProcessObj->Run();
                 if (iRet != 0)
                 {
@@ -141,7 +148,7 @@ int CXCommunicationServer::Stop()
     m_socketServerKernel.Stop();
     m_connectionsManager.Stop();
     m_dataDispathManager.Stop();
-    for (int i = 0; i < m_lstMessageProcess.size(); i++)
+    for (size_t i = 0; i < m_lstMessageProcess.size(); i++)
     {
         CXMessageProcessLevelBase * pProcessObj = (CXMessageProcessLevelBase *)m_lstMessageProcess.front();
         m_lstMessageProcess.pop_front();
@@ -152,9 +159,8 @@ int CXCommunicationServer::Stop()
     return RETURN_SUCCEED;
 }
 
-//have beed locked by CXConnectionObject::lock
-int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBufObj,
-    DWORD dwTransDataOfBytes)
+int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBufObj,DWORD dwTransDataOfBytes,
+	byte* pbyThreadCache, DWORD dwCacheLen)
 {
     //char szInfo[1024] = { 0 };
     //sprintf_s(szInfo, 1024, "OnRecv, Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d\n",
@@ -175,7 +181,7 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
     //SetFileCompletionNotificationModes
     ConnectionClosedType emClosedType = SOCKET_CLOSED;
     bool bNeedClose = false;
-    int iRet = conObj.PostRecv(BUF_SIZE);
+    int iRet = conObj.PostRecv(CX_BUF_SIZE);
     if (iRet != 0)
     {
         bNeedClose = true;
@@ -184,7 +190,7 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
     //conObj.FreeCXBufferObj(pBufObj);
     //return 0;
 
-    iRet = conObj.RecvPacket(pBufObj, dwTransDataOfBytes);
+    iRet = conObj.RecvPacket(pBufObj, dwTransDataOfBytes, pbyThreadCache, dwCacheLen);
     if (iRet != 0)
     {
         bNeedClose = true;
@@ -208,13 +214,18 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
         {
             return RETURN_SUCCEED;
         }
+
+        char szInfo[1024] = {0};
+        sprintf_s(szInfo,1024, "Failed to process the packet data,close this connection,connection id=%lld,error code is %d,desc is '%s'\n",
+                  conObj.GetConnectionIndex(),errno,strerror(errno));
+        pComServer->m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
         pComServer->CloseConnection(conObj, emClosedType);
     }
 
     return RETURN_SUCCEED;
 }
 
-//have beed locked by CXConnectionObject::lock
 int  CXCommunicationServer::OnClose(CXConnectionObject &conObj, ConnectionClosedType emClosedType)
 {
     if (conObj.GetState() >= CXConnectionObject::CLOSED)//closed
@@ -222,6 +233,12 @@ int  CXCommunicationServer::OnClose(CXConnectionObject &conObj, ConnectionClosed
         return RETURN_SUCCEED;
     }
     CXCommunicationServer * pComServer = (CXCommunicationServer*)conObj.GetServer();
+
+    char szInfo[1024] = {0};
+    sprintf_s(szInfo,1024, "Receive a commond to OnClose,close this connection,connection id=%lld,error code is %d,desc is '%s',closeType is %d\n",
+                  conObj.GetConnectionIndex(),errno,strerror(errno),(int)emClosedType);
+    //pComServer->m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
+
     pComServer->CloseConnection(conObj, emClosedType);
 
     return RETURN_SUCCEED;
@@ -233,6 +250,12 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
 
     if(bLockBySelf)
         conObj.Lock();
+
+    char  szInfo[1024] = { 0 };
+    CXConnectionSession * pSession = (CXConnectionSession *)conObj.GetSession();
+    sprintf_s(szInfo, 1024, "Receive a command to close the connection , connection index is %lld,session is %x,connection is %x\n",
+                    conObj.GetConnectionIndex(), pSession,&conObj);
+    //m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
 
     //printf("Prepare to close connection ,connetcion id=%lld,connections=%lld,state:%d,post number=%lld,buffer in list=%lld,buffer in queue=%lld,emClosedType=%d\n",
     //     conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber(), conObj.GetState(),
@@ -265,16 +288,22 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
         conObj.SetState(CXConnectionObject::CLOSED);
         m_connectionsManager.RemoveUsingConnection(&conObj);
 
-        CXConnectionSession * pSession = (CXConnectionSession *)conObj.GetSession();
+        
+        //CXConnectionSession * pSession = (CXConnectionSession *)conObj.GetSession();
         if (pSession != NULL)
         {
             pSession->RemoveConnection(conObj);
+            //m_sessionsManager.Lock();
             if (pSession->GetConnectionNumber() == 0)
             {
-                m_sessionsManager.RemoveUsingSession(pSession);
-                pSession->Destroy();
-                m_sessionsManager.AddFreeSession(pSession);
+                char  szInfo[1024] = { 0 };
+                sprintf_s(szInfo, 1024, "Close a session , guid is %s,connection index is %lld,session is %x,connection is %x\n",
+                    pSession->GetSessionGuid().c_str(), conObj.GetConnectionIndex(), pSession,&conObj);
+                m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
+
+                m_sessionsManager.CloseSession(pSession);
             }
+            //m_sessionsManager.UnLock();
         }
 
         bFreeConnection = true;
@@ -283,13 +312,16 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
         conObj.UnLock();
     if (bFreeConnection)
     {
-        // if the connection had been add to the free connections queue,and has been used by next socket connectcion.
-        // but some thread are also using this pointer of this connection,
-        // in this case , maybe some error occur.
-        m_connectionsManager.AddFreeConnectionObj(&conObj);
+        conObj.RecordReleasedTime();
+        m_connectionsManager.ReleaseConnection(&conObj);
+        //m_connectionsManager.AddFreeConnectionObj(&conObj);
         //printf("connection close ,connetcion id=%lld,connections=%lld,ClosedType=%d\n",
         //    conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber(), emClosedType);
     }
+
+    //g_lock.Lock();
+    //g_iTotalProcessCloseNum--;
+    //g_lock.Unlock();
 
 }
 
@@ -304,12 +336,12 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
     CXDataDispathLevelImpl & DataDispather = pComServer->GetDataDispathManger();
 
     CXConnectionObject *pConObj = ConnectionsManager.GetFreeConnectionObj();
-    CXMemoryCache *pCache = MemoryCacheManager.GetMemoryCache(sizeof(CXBufferObj));
+    //CXElasticMemoryCache *pCache = MemoryCacheManager.GetMemoryCache(sizeof(CXBufferObj));
 
     CXSessionsManager & sessionsManager = pComServer->GetSessionsManager();
 
     //PSocketObj  pObj = m_connectionManager.AddPendingConnection(nAcceptSock,(void*)this);
-    if (pConObj != NULL && pCache!=NULL)
+    if (pConObj != NULL )
     {
         pConObj->Build(sock, ConnectionsManager.GetCurrentConnectionIndex(), addrRemote);
         pConObj->SetServer(pServer);
@@ -317,6 +349,7 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
         pConObj->SetProcessOnePacketFun(CXCommunicationServer::OnProcessOnePacket);
         pConObj->SetSessionsManager(&sessionsManager);
         pConObj->SetLogHandle(pComServer->GetLogHandle());
+		pConObj->SetJournalLogHandle(pComServer->GetJournalLogHandle());
 
 
         //char *str = inet_ntoa(sockRemote.sin_addr);

@@ -21,17 +21,13 @@ a structure will been used to save a user's buffer.
 This class have a spinlock to solve the problem of thread synchronization.
 *****************************************************************************/
 #include "CXMemoryCache.h"
+#include <time.h>
 #ifndef WIN32
 #include <string.h>
 #endif
 
 CXMemoryCache::CXMemoryCache()
 {
-    //the head pointer of the used memory object list
-    //m_pUsedObjectList = NULL;
-    //the end pointer of the used memory object list
-    //m_pUsedObjectListEnd = NULL;
-
     //the head pointer of the empty memory object list
     m_pEmptyObjectListHead = NULL;
     //the end pointer of the empty memory object list
@@ -49,6 +45,13 @@ CXMemoryCache::CXMemoryCache()
     m_iObjectNumInMB = 0;
     m_iObjectSize = 0;
     m_bInited = false;
+
+	m_dwNumberOfUsingNodes = 0;
+	m_dwNumberOfTotalNodes = 0;
+
+	m_pElasticObj = NULL;
+
+    m_iLastUsedTime = (int64)time(NULL);
 }
 
 CXMemoryCache::~CXMemoryCache()
@@ -56,22 +59,43 @@ CXMemoryCache::~CXMemoryCache()
     Destroy();
 }
 //initialize the first memory block
-int CXMemoryCache::Initialize(int iObjectSize, int iObjectNumber)
+int CXMemoryCache::Initialize(int iObjectSize, int iObjectNumber, bool bInitAtOnce)
 {
+	m_lock.Lock();
     if(m_bInited)
     {
+		m_lock.Unlock();
         return 0;
     }
 
     m_iObjectNumInMB = iObjectNumber;
     m_iObjectSize = iObjectSize;
-    int nRet = AllocateMemoryBlock();
-    if(nRet==0)
-    {
-        m_bInited = true;
-    }
+	m_lock.Unlock();
 
-    return nRet;
+	if (bInitAtOnce)
+	{
+		return RealInitialize();
+	}
+	return 0;
+}
+
+int  CXMemoryCache::RealInitialize()
+{
+	m_lock.Lock();
+	if (m_bInited)
+	{
+		m_lock.Unlock();
+		return 0;
+	}
+
+	int nRet = AllocateMemoryBlock();
+	if (nRet == 0)
+	{
+		m_bInited = true;
+        m_iLastUsedTime = (int64)time(NULL);
+	}
+	m_lock.Unlock();
+	return nRet;
 }
 
 void CXMemoryCache::Destroy()
@@ -94,6 +118,10 @@ void CXMemoryCache::Destroy()
         m_pBlockListEnd = NULL;
         m_pEmptyObjectListHead = NULL;
         m_pEmptyObjectListEnd = NULL;
+		m_bInited = false;
+		m_dwNumberOfUsingNodes = 0;
+		m_dwNumberOfTotalNodes = 0;
+        m_iLastUsedTime = (int64)time(NULL);
     }
 
     m_lock.Unlock();
@@ -135,6 +163,7 @@ int  CXMemoryCache::AllocateMemoryBlock()
     pObjectList->pData = ((byte*)pObjectList + sizeof(cx_cache_obj));
     m_lstBlocks.push_back((cx_cache_obj*)pBuf);
     m_nMemoryBlocksNumber++;
+	m_dwNumberOfTotalNodes += m_iObjectNumInMB;
 
     m_pEmptyObjectListHead = (cx_cache_obj*)pBuf;
     m_pEmptyObjectListEnd = pObjectList;
@@ -146,9 +175,21 @@ int  CXMemoryCache::AllocateMemoryBlock()
 
 void * CXMemoryCache::GetObject()
 {
+    int iRet = 0;
     if (!m_bInited)
     {
-        return NULL;
+        if(m_iObjectNumInMB!=0 && m_iObjectSize!=0)
+        {
+            iRet = RealInitialize();
+            if (iRet != 0)
+            {
+                return NULL;
+            }
+        }
+        else
+        {
+            return NULL;
+        }
     }
 
     cx_cache_obj *pObj = NULL;
@@ -178,7 +219,9 @@ void * CXMemoryCache::GetObject()
         }
 
     }
+	m_dwNumberOfUsingNodes++;
     pObj->pNext = NULL;
+    m_iLastUsedTime = (int64)time(NULL);
     m_lock.Unlock();
 
     memset(pObj->pData, 0, m_iObjectSize);
@@ -210,7 +253,35 @@ void CXMemoryCache::FreeObject(void*pObjFree)
     {
         m_pEmptyObjectListHead = m_pEmptyObjectListEnd = pObj;
     }
+	m_dwNumberOfUsingNodes--;
+    m_iLastUsedTime = (int64)time(NULL);
     m_lock.Unlock();
 
     return ;
+}
+
+//get the unused seconds for this cache
+int64 CXMemoryCache::GetUnusedState(DWORD &dwUsingNodes)
+{
+    m_lock.Lock();
+    dwUsingNodes = 0;
+    if (m_bInited)
+    {
+        int64 iCurTime = (int64)time(NULL);
+        dwUsingNodes = m_dwNumberOfUsingNodes;
+        m_lock.Unlock();
+        return (iCurTime - m_iLastUsedTime);
+    }
+    else
+    {
+        m_lock.Unlock();
+        return 0;
+    } 
+}
+
+void CXMemoryCache::RecordUsedTime()
+{
+    m_lock.Lock();
+    m_iLastUsedTime = (int64)time(NULL);
+    m_lock.Unlock();
 }

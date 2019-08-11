@@ -61,6 +61,8 @@ int CXThread::Start(RunFun funThread, void *pThreadPara)
 {
     int iRet = 0;
     int iStackSize = 1024 * 1024 * 5;//5MB
+    m_funRun = funThread;
+    m_pThreadPara = pThreadPara;
 #ifdef WIN32
     m_hThread = (HANDLE)_beginthreadex(NULL, iStackSize, ThreadFunction, this, 0, NULL);
     if (NULL == m_hThread)
@@ -84,8 +86,7 @@ int CXThread::Start(RunFun funThread, void *pThreadPara)
         iRet = -1;
     }
 #endif
-    m_funRun = funThread;
-    m_pThreadPara = pThreadPara;
+    
     return iRet;
 }
 
@@ -144,10 +145,11 @@ void* CXThread::ThreadFunction(void* arg)
         pRet = pThis->m_funRun(pThis->GetThreadPara());
     }
     pThis->m_bRunning = false;
-    pThis->m_hThread = NULL;
 
 #ifdef WIN32
+    pThis->m_hThread = NULL;
     return (unsigned int)pRet;
+
 #else
     return pRet;
 #endif //WIN32

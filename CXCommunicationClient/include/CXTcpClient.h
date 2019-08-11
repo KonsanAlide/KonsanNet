@@ -21,6 +21,10 @@ Description£º
 #include "CXSocketImpl.h"
 #include "CXCommonPacketStructure.h"
 #include "CXDataParserImpl.h"
+#include "CXGuidObject.h"
+#ifndef WIN32
+#include <string.h>
+#endif
 
 namespace CXCommunication
 {
@@ -56,6 +60,10 @@ namespace CXCommunication
         DWORD    m_dwLeftDataBeginPos;
         DWORD    m_dwLeftRecvDataLen;
 
+		byte     m_byRPCObjectGuid[CX_GUID_LEN];
+
+		CXGuidObject m_guidObj;
+
     public:
 
         CXTcpClient();
@@ -88,6 +96,8 @@ namespace CXCommunication
 
         virtual int RecvPacket(byte *pData, int iDataLen, int &iReadBytes,DWORD &dwMesCode);
 
+		virtual int RecvPacket(int &iReadBytes, DWORD &dwMesCode);
+
         virtual bool ReadLeftData(byte *pData, int iDataLen, int &iReadBytes);
 
         bool   SetSendBufferSize(DWORD dwBufSize);
@@ -108,6 +118,9 @@ namespace CXCommunication
         void SetEncryptData(bool bSet) { m_bEncryptData = bSet; }
         bool IsCompressData() { return m_bCompressData; }
         bool IsEncryptData() { return m_bEncryptData; }
+
+		void SetRPCObjectGuid(const byte *pbyGuid) { memcpy(m_byRPCObjectGuid, pbyGuid, CX_GUID_LEN); }
+        void GetRPCObjectGuid(byte *pbyGuid) { memcpy(pbyGuid, m_byRPCObjectGuid, CX_GUID_LEN); }
     };
 }
 #endif

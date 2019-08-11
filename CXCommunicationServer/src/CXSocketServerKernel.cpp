@@ -29,6 +29,7 @@ Description:
 
 #include "CXSocketServerKernel.h"
 #include "CXConnectionObject.h"
+#include "PlatformFunctionDefine.h"
 
 using namespace CXCommunication;
 
@@ -252,7 +253,7 @@ int CXSocketServerKernel::OnAccept(void *pServer, cxsocket sock, sockaddr_in &ad
 }
 
 int CXSocketServerKernel::OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-    DWORD dwTransDataOfBytes)
+    DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen)
 {
     return RETURN_SUCCEED;
 }
@@ -355,6 +356,7 @@ int CXSocketServerKernel::ListenThread()
     return 0;
 }
 
+//return value :==-4 failed to allocate memory to decrypt and decompress
 int  CXSocketServerKernel::WaitThread()
 {
 
@@ -367,6 +369,23 @@ int  CXSocketServerKernel::WaitThread()
     BOOL bGetStauts = FALSE;
 
     PCXBufferObj pBufObj = NULL;
+
+	byte *pbyCache = NULL;
+	DWORD dwCacheLen = CX_MAX_CHACHE_SIZE;
+
+	try
+	{
+		pbyCache = new byte[dwCacheLen];
+		if (pbyCache == NULL)
+		{
+			return -4;
+		}
+	}
+	catch (const bad_alloc& e)
+	{
+		return -4;
+	}
+
 
 #ifdef WIN32
     void * lpCompletionKey = NULL;
@@ -389,7 +408,7 @@ int  CXSocketServerKernel::WaitThread()
 
         if (!bGetStauts)
         {
-            if (!ProcessIocpErrorEvent(*pConObj,lpOverlapped, dwNumberOfBytes))
+            if (!ProcessIocpErrorEvent(*pConObj,lpOverlapped, dwNumberOfBytes,pbyCache,dwCacheLen))
             {
                 return -2;
             }
@@ -401,7 +420,7 @@ int  CXSocketServerKernel::WaitThread()
 
             if (dwNumberOfBytes == 0 && (pBufObj->wsaBuf.len!=0))
             {
-                if (!ProcessIocpErrorEvent(*pConObj, lpOverlapped, dwNumberOfBytes))
+                if (!ProcessIocpErrorEvent(*pConObj, lpOverlapped, dwNumberOfBytes, pbyCache, dwCacheLen))
                 {
                     return -2;
                 }
@@ -411,9 +430,9 @@ int  CXSocketServerKernel::WaitThread()
             //sprintf_s(szInfo,1024, "Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x\n", dwNumberOfBytes, (DWORD)pBufObj);
             //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
             //printf_s(szInfo);
-            if (!ProcessIOCPEvent(*pConObj, pBufObj, dwNumberOfBytes))
+            if (!ProcessIOCPEvent(*pConObj, pBufObj, dwNumberOfBytes, pbyCache, dwCacheLen))
             {
-                return -2;
+                return -3;
             }
 
         }
@@ -433,7 +452,7 @@ int  CXSocketServerKernel::WaitThread()
             {
                 //cout << "A Data Packet received" << endl;
                 pConObj = (CXConnectionObject*)(events[i].data.ptr);
-                int iProcessRet = ProcessEpollEvent(*pConObj);
+                int iProcessRet = ProcessEpollEvent(*pConObj, pbyCache, dwCacheLen);
 
             }
             else if(events[i].events & EPOLLOUT) // 如果有数据发送
@@ -443,7 +462,14 @@ int  CXSocketServerKernel::WaitThread()
             if(events[i].events & EPOLLERR || events[i].events & EPOLLHUP)
             {
                 pConObj = (CXConnectionObject*)(events[i].data.ptr);
-                printf("A error occur , connection id=%lld \n",pConObj->GetConnectionIndex());
+                //printf("A error occur , connection id=%lld,error code is %d,desc is '%s'\n",
+                //       pConObj->GetConnectionIndex(),errno,strerror(errno));
+
+                char szInfo[1024] = {0};
+                sprintf_s(szInfo,1024, "A error occur, EPOLLERR or EPOLLHUP,need to close,connection id=%lld,error code is %d,desc is '%s'\n",
+                          pConObj->GetConnectionIndex(),errno,strerror(errno));
+                m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
                 if (m_pfOnClose != NULL)
                 {
                     m_pfOnClose(*pConObj, SOCKET_CLOSED);
@@ -462,7 +488,7 @@ int  CXSocketServerKernel::WaitThread()
 
 #ifdef WIN32
 BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LPOVERLAPPED lpOverlapped,
-    DWORD dwTransDataOfBytes)
+	DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen)
 {
     DWORD dwErrorCode = GetLastError();
     //printf_s("GetQueuedCompletionStatus failed,error code= %d,dwTransDataOfBytes=%d\n", dwErrorCode, dwTransDataOfBytes);
@@ -517,7 +543,7 @@ BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LP
 
 //windows iocp event process
 BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-    DWORD dwTransDataOfBytes)
+	DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen)
 {
     char szInfo[1024] = { 0 };
     //sprintf_s(szInfo, 1024, "ProcessIOCPEvent:Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d,pBufObj->nSequenceNum=%I64i\n",
@@ -532,11 +558,11 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
         pBufObj->wsaBuf.len = dwTransDataOfBytes;
         if (m_pfOnRead != NULL)
         {
-            m_pfOnRead(conObj, pBufObj, dwTransDataOfBytes);
+            m_pfOnRead(conObj, pBufObj, dwTransDataOfBytes, pbyThreadCache,dwCacheLen);
         }
         else
         {
-            OnRead(conObj, pBufObj, dwTransDataOfBytes);
+            OnRead(conObj, pBufObj, dwTransDataOfBytes, pbyThreadCache, dwCacheLen);
         }
 
         return TRUE;
@@ -564,7 +590,7 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
 
 #ifndef WIN32
 //windows epoll event process
-int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
+int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj, byte* pbyThreadCache, DWORD dwCacheLen)
 {
     int iRet = 0;
     int nRet = 0;
@@ -578,11 +604,11 @@ int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
         {
             if (m_pfOnRead != NULL)
             {
-                m_pfOnRead(conObj,pBufObj,dwReadLen);
+                m_pfOnRead(conObj,pBufObj,dwReadLen, pbyThreadCache, dwCacheLen);
             }
             else
             {
-                OnRead(conObj, pBufObj, dwReadLen);
+                OnRead(conObj, pBufObj, dwReadLen, pbyThreadCache, dwCacheLen);
             }
         }
 
@@ -590,6 +616,11 @@ int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj)
         // some error or connection had been closed
         if (nRet == -3 || nRet == -2)
         {
+            char szInfo[1024] = {0};
+            sprintf_s(szInfo,1024, "Failed to read data from socket,need to close,connection id=%lld,error code is %d,desc is '%s'\n",
+                          conObj.GetConnectionIndex(),errno,strerror(errno));
+            m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
             if (m_pfOnClose != NULL)
             {
                 m_pfOnClose(conObj, SOCKET_CLOSED);
@@ -679,6 +710,10 @@ int  CXSocketServerKernel::AttachConnetionToModel(CXConnectionObject &conObj)
     ev.data.ptr = (void*)&conObj;
     if (-1 == epoll_ctl(m_epollHandle, EPOLL_CTL_ADD, conObj.GetSocket(), &ev))
     {
+        char szInfo[1024] = {0};
+        sprintf_s(szInfo,1024, "Failed to attach the new connection to the epoll model,connection id=%lld,error code is %d,desc is '%s'\n",
+                     conObj.GetConnectionIndex(),errno,strerror(errno));
+        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
         closesocket(conObj.GetSocket());
         //cout << "Failed to add the new connection socket to the epoll model" << endl;
         return -1;
@@ -703,7 +738,11 @@ int  CXSocketServerKernel::DetachConnetionToModel(CXConnectionObject &conObj)
     if (-1 == epoll_ctl(m_epollHandle, EPOLL_CTL_DEL, conObj.GetSocket(), &ev))
     {
         //closesocket(conObj.GetSocket());
-        printf("Failed to add the new connection socket to the epoll model,errno=%d,error=%s", errno, strerror(errno));
+
+        char szInfo[1024] = {0};
+        sprintf_s(szInfo,1024, "Failed to add the new connection socket to the epoll model,connection id=%lld,error code is %d,desc is '%s'\n",
+                     conObj.GetConnectionIndex(),errno,strerror(errno));
+        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
 
         return -1;
     }

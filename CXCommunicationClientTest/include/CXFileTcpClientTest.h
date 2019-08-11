@@ -1,5 +1,5 @@
 /****************************************************************************
-Copyright (c) 2018 Charles Yang
+Copyright (c) 2018 Chance Yang
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,15 +15,19 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#include "CXUserMessageProcessBase.h"
-
-using namespace CXCommunication;
-CXUserMessageProcessBase::CXUserMessageProcessBase()
+#pragma once
+#include "PlatformDataTypeDefine.h"
+#include <string>
+using std::string;
+class CXFileTcpClientTest
 {
-}
+public:
+    CXFileTcpClientTest();
+    ~CXFileTcpClientTest();
 
+    int Test(int iNumber);
+    bool CompareFile(string strFile1,string strFile2);
 
-CXUserMessageProcessBase::~CXUserMessageProcessBase()
-{
-}
+    bool CompareFile(string strFile1, byte *pFileData, int iDataLen);
+};
 

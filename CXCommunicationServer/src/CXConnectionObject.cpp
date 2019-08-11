@@ -24,6 +24,14 @@ Description:
 #ifndef WIN32
 #include<sys/time.h>
 #endif
+
+#include <chrono>
+#include <ctime>
+using namespace std;
+
+//extern CXSpinLock g_lock;
+//extern int g_iTotalMessage ;
+
 namespace CXCommunication
 {
     CXConnectionObject::CXConnectionObject()
@@ -86,6 +94,11 @@ namespace CXCommunication
 
         //10 seconds
         m_dwTimeOutMSeconds = 10000;
+
+        m_tmReleasedTime = 0;
+
+		m_pJouralLogHandle = NULL;
+
         m_lockRead.Unlock();
     }
 
@@ -104,13 +117,7 @@ namespace CXCommunication
         Reset();
         m_sock = sock;
 
-#ifdef WIN32
-        m_tmAcceptTime = GetTickCount64();
-#else
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        m_tmAcceptTime = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-#endif
+        m_tmAcceptTime = GetTickCountValue();
 
         m_uiConnectionIndex = uiConnIndex;
 
@@ -120,56 +127,58 @@ namespace CXCommunication
 
     void CXConnectionObject::RecordCurrentPacketTime()
     {
-        //m_tmLastPacketTime = time(NULL);
-#ifdef WIN32
-        m_tmLastPacketTime = GetTickCount64();
-#else
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        m_tmLastPacketTime = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-#endif
+        m_tmLastPacketTime = GetTickCountValue();
     }
 
-    int CXConnectionObject::RecvPacket(PCXBufferObj pBufObj, DWORD dwTransDataOfBytes,bool bLockBySelf)
+    //push the received buffer to the end of the read buffer list
+	bool CXConnectionObject::PushReceivedBuffer(PCXBufferObj pBufObj)
     {
-        PCXBufferObj pCurBuf = NULL;
-        PCXBufferObj pPrevBuf = NULL;
-        int iLeftLen = 0;
-        int iUsedLen = 0;
-        int iPacketLen = 0;
-        int iNeedCopyLen = 0;
-        int iBeginPointInBuffer = 0;
-        bool bAllcateMemoryFails = false;
-        char szInfo[1024] = { 0 };
-
-        if(bLockBySelf)
-            m_lock.Lock();
-
-        //sprintf_s(szInfo, 1024, "Receive buffer,buffer index = %I64i,datalen = %d,pBufObj=%x\n", pBufObj->nSequenceNum,
-        //    dwTransDataOfBytes, pBufObj);
-        //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
-        //printf_s(szInfo);
-
         if (pBufObj != NULL)
         {
+            PCXBufferObj pCurBuf = NULL;
+            PCXBufferObj pPrevBuf = NULL;
+
+			//record the time of the last received packet
             RecordCurrentPacketTime();
 
-            if (m_pListReadBuf == NULL ||
-                (m_pListReadBuf != NULL && m_pListReadBuf->nSequenceNum > pBufObj->nSequenceNum))
+			pBufObj->pNext = NULL;
+			
+
+			//if the read buffer list is empty, add the current received packet to the end;
+			if (m_pListReadBuf == NULL && m_pListReadBufEnd == NULL)
+			{
+				m_pListReadBuf = m_pListReadBufEnd = pBufObj;
+				pBufObj->pNext = NULL;
+			}
+			//if the sequence number of the current received packet is larger than the sequence number 
+			//of the last packet in the read list, add the current received packet to the end of the read list;
+			else if (m_pListReadBufEnd != NULL && (m_pListReadBufEnd->nSequenceNum < pBufObj->nSequenceNum))
+			{
+				m_pListReadBufEnd->pNext = pBufObj;
+				m_pListReadBufEnd = pBufObj;
+				if (m_pListReadBuf == NULL)
+				{
+					char szInfo[1024] = { 0 };
+					sprintf_s(szInfo, 1024, "The read list had an error, the end pointer is not empty, but the header pointer is empty\n");
+					m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+					return false;
+				}
+			}
+			//if the sequence number of the current received packet is less than the sequence number 
+			//of the first packet in the read list, add the current received packet to the header of the read list;
+            else if (m_pListReadBuf != NULL && (m_pListReadBuf->nSequenceNum > pBufObj->nSequenceNum))
             {
                 pBufObj->pNext = m_pListReadBuf;
                 m_pListReadBuf = pBufObj;
                 if (m_pListReadBufEnd == NULL)
                 {
-                    m_pListReadBufEnd = m_pListReadBuf;
+					char szInfo[1024] = { 0 };
+					sprintf_s(szInfo, 1024, "The read list had an error, the header pointer is not empty, but the end pointer is empty\n");
+					m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+					return false;
                 }
             }
-            else if (m_pListReadBufEnd != NULL && m_pListReadBufEnd->nSequenceNum < pBufObj->nSequenceNum)
-            {
-                m_pListReadBufEnd->pNext = pBufObj;
-                m_pListReadBufEnd = pBufObj;
-            }
-            else
+            else //add the current received packet to the middle of the read list
             {
                 pCurBuf = m_pListReadBuf->pNext;
                 pPrevBuf = m_pListReadBuf;
@@ -186,24 +195,69 @@ namespace CXCommunication
                 }
             }
 
+			//increase the packet number in the read list,
+			//reduce the packet number that has been posted.
             m_lockRead.Lock();
             m_uiNumberOfReceivedBufferInList++;
             m_uiNumberOfPostBuffers--;
             m_lockRead.Unlock();
+			return true;
         }
+		else
+		{
+			return false;
+		}
+    }
+
+    
+    //receive a buffer, add it to the read buffer list
+    //parse the read buffer list, restructure the message packet
+	//return value: ==-2 the read list has some error
+	//              ==-3 occur error when allocat memory
+	//              ==-4 received a incorrect packet
+    int CXConnectionObject::RecvPacket(PCXBufferObj pBufObj, DWORD dwTransDataOfBytes,
+		byte* pbyThreadCache, DWORD dwCacheLen,bool bLockBySelf)
+    {
+		if (pBufObj == NULL || pbyThreadCache==NULL || dwCacheLen==0)
+		{
+			return INVALID_PARAMETER;
+		}
+
+        if(bLockBySelf)
+            m_lock.Lock();
+
+        //sprintf_s(szInfo, 1024, "Receive buffer,buffer index = %I64i,datalen = %d,pBufObj=%x\n", pBufObj->nSequenceNum,
+        //    dwTransDataOfBytes, pBufObj);
+        //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
+        //printf_s(szInfo);
+
+		if (!PushReceivedBuffer(pBufObj))
+		{
+			if (bLockBySelf)
+				m_lock.Unlock();
+			return -2;
+		}
 
         //save the header data
         CXPacketHeader packetHeader;
         memset(&packetHeader, 0, sizeof(CXPacketHeader));
         byte *pPacketHeader = (byte*)&packetHeader;
-        int iHeaderLen = sizeof(CXPacketHeader);
+        const int iHeaderLen = sizeof(CXPacketHeader);
 
         PCXMessageData pMessageData = NULL;
 
-        bool bFindErrorPacket = false;
 
+		PCXBufferObj pCurBuf = NULL;
+		PCXBufferObj pPrevBuf = NULL;
+
+		bool bAllcateMemoryFails = false;
+		char szInfo[1024] = { 0 };
+        bool bFindErrorPacket = false;
+		int  iUsedLen = 0;
         uint64 uiPacketIndex = m_uiLastProcessBufferIndex;
         pCurBuf = m_pListReadBuf;
+
+        //byte byLastByte = 0;
 
         while (pCurBuf)
         {
@@ -212,24 +266,42 @@ namespace CXCommunication
                 break;
             }
 
-            iLeftLen = pCurBuf->wsaBuf.len;
-            iNeedCopyLen = 0;
-            iBeginPointInBuffer = pCurBuf->nCurDataPointer;
+			int iLeftLen = pCurBuf->wsaBuf.len;
+			int iPacketLen = 0;
+			int iNeedCopyLen = 0;
+			int iBeginPointInBuffer = pCurBuf->nCurDataPointer;
 
-
-            if (iLeftLen<0)
+            if (iLeftLen<=0) //the empty buffer
             {
-                //printf("#######iLeftLen<0 ,connection id = %I64i,pCurBuf :%x, Cache address:%x\n",
-                //    m_uiConnectionIndex,pCurBuf, m_lpCacheObj);
-
-                sprintf(szInfo, "iLeftLen<0 ,connection id = %lld,pCurBuf :%x\n",
-                        m_uiConnectionIndex,(void*)pCurBuf);
-                m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                printf(szInfo);
-                break;
+                uiPacketIndex++;
+                pCurBuf = pCurBuf->pNext;
+                continue;
             }
 
-            if(iUsedLen<iHeaderLen)//not have a complete header, copy from this buffer
+			/*
+			//when read a new packet or found a byte left in the variable:byLastByte
+            if (iUsedLen == 0 || iUsedLen == 1)//the beginning of the packet
+            {
+				//if had received a incorrect packet, we need to find the begin point of the next correct packet.
+                int iReturn = JudgeHeaderFlag(pCurBuf,byLastByte,pPacketHeader,iUsedLen,
+                    iLeftLen, iBeginPointInBuffer);
+                if (iReturn == -1) //not find any thing
+                {
+                    uiPacketIndex = m_uiLastProcessBufferIndex;
+                    pCurBuf = m_pListReadBufEnd;
+                    continue;
+                }
+                else if (iReturn == 1)//find a byte of the header flag
+                {
+                    pCurBuf= pCurBuf->pNext;
+                    uiPacketIndex++;
+                    continue;
+                }
+            }
+			*/
+
+			//copy the header data to pPacketHeader
+            if(iUsedLen<iHeaderLen)
             {
                 iNeedCopyLen = iHeaderLen - iUsedLen;
                 if (iLeftLen <iNeedCopyLen)//not have a complete header
@@ -244,7 +316,8 @@ namespace CXCommunication
                 iLeftLen -= iNeedCopyLen;
                 iBeginPointInBuffer += iNeedCopyLen;
 
-                if (iUsedLen<iHeaderLen)//not have a complete header
+				//if is enough complete header, find next buffer
+                if (iUsedLen<iHeaderLen)
                 {
                     pCurBuf = pCurBuf->pNext;
                     uiPacketIndex++;
@@ -252,65 +325,68 @@ namespace CXCommunication
                 }
             }
 
-            if (packetHeader.wFlag != CX_PACKET_HEADER_FLAG)
-            {
-                sprintf_s(szInfo, 1024, "Received a error packet,the packet flag in the header is not equal to 0x25f7 ,connection id = %lld,packet sequence number:%lld\n",
-                    m_uiConnectionIndex, pCurBuf->nSequenceNum);
-                m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                bFindErrorPacket = true;
-                break;
-            }
 
-            if (packetHeader.dwDataLen > 1024 * 1024)//the packet size must be less than 1MB
+			//a wrong packet,the magic number of the header is not CX_PACKET_HEADER_FLAG
+			if (packetHeader.wFlag != CX_PACKET_HEADER_FLAG )
+			{
+				sprintf_s(szInfo, 1024, "Received a error packet,the magic number is unmatched, connection id = %lld,packet sequence number:%lld\n",
+					m_uiConnectionIndex, pCurBuf->nSequenceNum);
+				bFindErrorPacket = true;
+				m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+				break;
+			}
+
+            //a wrong header data
+            //wrong packet , the packet size must be less than 20MB
+            if (packetHeader.dwDataLen > CX_MAX_CHACHE_SIZE*2)
             {
-                sprintf_s(szInfo, 1024, "Received a error packet,the size of the packet is larger than 1MB ,connection id = %lld,packet sequence number:%lld\n",
+                sprintf_s(szInfo, 1024, "Received a error packet,the size of the packet is larger than 10MB ,connection id = %lld,packet sequence number:%lld\n",
                     m_uiConnectionIndex, pCurBuf->nSequenceNum);
-                m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                bFindErrorPacket = true;
-                break;
+				bFindErrorPacket = true;
+				m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+				break;
             }
 
             int iBufferLen = sizeof(CXMessageData)- sizeof(CXPacketBodyData)+ packetHeader.dwDataLen;
-            if (pMessageData == NULL)
-            {
-                pMessageData = (PCXMessageData)GetBuffer(iBufferLen);
-                if (pMessageData == NULL)
-                {
-                    sprintf_s(szInfo, 1024, "Getbuffer null ,This :%x, Cache address:%x\n", (void*)this, (void*)m_lpCacheObj);
-                    m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                    printf(szInfo);
+			if (pMessageData == NULL)
+			{
+				pMessageData = (PCXMessageData)GetBuffer(iBufferLen);
+				if (pMessageData == NULL)
+				{
+					sprintf_s(szInfo, 1024, "Failed to get %d-bytes buffer  ,This :%x, Cache address:%x\n",
+						iBufferLen,(void*)this, (void*)m_lpCacheObj);
+					m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+					printf(szInfo);
 
-                    bAllcateMemoryFails = true;
-                    break;
-                }
-                pMessageData->pConObj = (void*)this;
-                pMessageData->dwType = 1;
-                pMessageData->dwDataLen = packetHeader.dwDataLen;
-            }
-
-            //pMessageData->dwMesCode = packetData.bodyData.dwMesCode;
+					bAllcateMemoryFails = true;
+					break;
+				}
+				pMessageData->pConObj = (void*)this;
+				pMessageData->dwType = 1;
+				pMessageData->dwDataLen = packetHeader.dwDataLen;
+			}
 
             byte *pBodyData = (byte*)&pMessageData->bodyData;
             iPacketLen = packetHeader.dwDataLen + sizeof(CXPacketHeader);
+			iNeedCopyLen = iPacketLen - iUsedLen;
+			
+			if (iLeftLen > 0 && iNeedCopyLen>0)
+			{
+				if (iLeftLen < iNeedCopyLen)
+					iNeedCopyLen = iLeftLen;
 
-            int iBeginOffset = iUsedLen - iHeaderLen;
-            if (iLeftLen + iUsedLen < iPacketLen) //not have a complete packet
+				int iBeginOffset = iUsedLen - iHeaderLen;
+				memcpy(pBodyData + iBeginOffset, pCurBuf->wsaBuf.buf + iBeginPointInBuffer, iNeedCopyLen);
+				iUsedLen += iNeedCopyLen;
+				iBeginPointInBuffer += iNeedCopyLen;
+			}
+
+            if (iUsedLen < iPacketLen) //not have a complete packet
             {
-                if (iLeftLen > 0)
-                {
-                    memcpy(pBodyData + iBeginOffset, pCurBuf->wsaBuf.buf + iBeginPointInBuffer,
-                        iLeftLen);
-                    iUsedLen += iLeftLen;
-                }
-
                 pCurBuf = pCurBuf->pNext;
                 uiPacketIndex++;
                 continue;
             }
-
-            iNeedCopyLen = (iPacketLen - iUsedLen);
-            memcpy(pBodyData + iBeginOffset, pCurBuf->wsaBuf.buf + iBeginPointInBuffer,
-                iNeedCopyLen);
 
             if (VerifyPacketBodyData(&packetHeader, pBodyData))
             {
@@ -331,6 +407,9 @@ namespace CXCommunication
                 if (m_pfnProcessOnePacket != NULL)
                 {
                     AddReceivedPacketNumber();
+                    //g_lock.Lock();
+                    //g_iTotalMessage++;
+                    //g_lock.Unlock();
                     //m_uiNumberOfReceivedPacketInQueue++;
                     m_pfnProcessOnePacket(*this, pMessageData);
                 }
@@ -339,73 +418,55 @@ namespace CXCommunication
                     OnProcessOnePacket(*this, pMessageData);
                 }
             }
-            else
+            else // the packet is wrong packet, break it ,and close this connection
             {
                 sprintf_s(szInfo, 1024, "Received a error packet,verify the packet data failed,connection id = %lld,packet sequence number:%lld \n",
                     m_uiConnectionIndex, pCurBuf->nSequenceNum);
                 m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                bFindErrorPacket = true;
-                break;
+
+                FreeBuffer(pMessageData);
+                pMessageData = NULL;
+
+				bFindErrorPacket = true;
+				break;
             }
 
-            pMessageData = NULL;
-            memset(pPacketHeader, 0, sizeof(CXPacketHeader));
+			pCurBuf->wsaBuf.len -= (iBeginPointInBuffer - pCurBuf->nCurDataPointer);
+			pCurBuf->nCurDataPointer = iBeginPointInBuffer;
+			if (pCurBuf->wsaBuf.len == 0)// not left any data, free it
+			{
+				pCurBuf = pCurBuf->pNext;
+			}
 
-            iBeginPointInBuffer += iNeedCopyLen;
-
-            int iTotalUsedLen = 0;
             PCXBufferObj pNeedDeleteBuf = m_pListReadBuf;
             while (pNeedDeleteBuf && pNeedDeleteBuf!= pCurBuf)
             {
                 m_pListReadBuf = pNeedDeleteBuf->pNext;
-                iTotalUsedLen += pNeedDeleteBuf->wsaBuf.len;
-
                 //sprintf_s(szInfo, 1024, "Free Buffer ,buffer address = %x,buffer index = %I64i, \n\n", pNeedDeleteBuf,pNeedDeleteBuf->nSequenceNum);
                 //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
                 //printf_s(szInfo);
 
-                //printf("\n\n####Free Buffer ,buffer index = %I64i\n\n", pNeedDeleteBuf->nSequenceNum);
                 FreeCXBufferObj(pNeedDeleteBuf);
-                m_uiLastProcessBufferIndex++;
+                
                 m_lockRead.Lock();
+				m_uiLastProcessBufferIndex++;
                 m_uiNumberOfReceivedBufferInList--;
                 m_lockRead.Unlock();
-                
+
+                //g_lock.Lock();
+                //g_iTotalProcessPacket++;
+                //g_lock.Unlock();
+
                 pNeedDeleteBuf = m_pListReadBuf;
             }
 
-            pCurBuf->wsaBuf.len -= (iBeginPointInBuffer - pCurBuf->nCurDataPointer);
-            pCurBuf->nCurDataPointer = iBeginPointInBuffer;
+			if (pCurBuf== NULL)
+			{
+				m_pListReadBuf = m_pListReadBufEnd = NULL;
+			}
 
-            if (pCurBuf->wsaBuf.len == 0) //this buffer have left not any data
-            {
-                uiPacketIndex++;
-                m_uiLastProcessBufferIndex++;
-                if (pCurBuf->pNext==NULL)
-                {
-                    m_pListReadBuf = m_pListReadBufEnd = NULL;
-                    FreeCXBufferObj(pCurBuf);
-                    m_lockRead.Lock();
-                    m_uiNumberOfReceivedBufferInList--;
-                    m_lockRead.Unlock();
-
-                }
-                else
-                {
-                    m_pListReadBuf = pCurBuf->pNext;
-                    FreeCXBufferObj(pCurBuf);
-                    m_lockRead.Lock();
-                    m_uiNumberOfReceivedBufferInList--;
-                    m_lockRead.Unlock();
-
-                }
-                pCurBuf = m_pListReadBuf;
-            }
-            else //this buffer have left some data
-            {
-            }
-
-            iPacketLen = 0;
+			pMessageData = NULL;
+			memset(pPacketHeader, 0, sizeof(CXPacketHeader));
             iUsedLen = 0;
             continue;
         }
@@ -420,13 +481,18 @@ namespace CXCommunication
             return -3;
         }
 
+		if (bFindErrorPacket)
+		{
+			return -4;
+		}
+
         return RETURN_SUCCEED;
     }
 
     bool CXConnectionObject::VerifyPacketBodyData(PCXPacketHeader pHeader, byte *pData)
     {
         DWORD dwCheckSum = 0;
-        for (int i = 0; i<pHeader->dwDataLen; i++)
+        for (DWORD i = 0; i<pHeader->dwDataLen; i++)
         {
             dwCheckSum += (unsigned int)pData[i];
         }
@@ -624,7 +690,7 @@ namespace CXCommunication
         }
 
         pBufObj->pConObj = (void*)this;
-        pBufObj->wsaBuf.len = BUF_SIZE;
+        pBufObj->wsaBuf.len = CX_BUF_SIZE;
         pBufObj->wsaBuf.buf = pBufObj->buf;
         return pBufObj;
     }
@@ -686,7 +752,7 @@ namespace CXCommunication
         //process the left buffer in the read list
         if (bNeedProcessLeftBuffers)
         {
-            RecvPacket(NULL, 0,false);
+            //RecvPacket(NULL, 0,false);
         }
 
         if (m_uiNumberOfPostBuffers == 0 && m_pListReadBuf != NULL)
@@ -827,8 +893,9 @@ namespace CXCommunication
                 if (errno == EAGAIN)// all data had been sent
                 {
                     bWritten = true;
-                    nRet = -1;
-                    break;
+                    //nRet = -1;
+                    //break;
+                    continue;
                 }
                 else if (errno == ECONNRESET)//receive the RST packet from the peer
                 {
@@ -877,7 +944,7 @@ namespace CXCommunication
         if (bLockBySelf)
             m_lockSend.Lock();
         DWORD dwPacketLen = dwLen + sizeof(CXPacketData)-1;
-        DWORD dwBufferLen = dwPacketLen + sizeof(CXBufferObj) - BUF_SIZE;
+        DWORD dwBufferLen = dwPacketLen + sizeof(CXBufferObj) - CX_BUF_SIZE;
         int iPacketBodyLen = dwPacketLen-sizeof(CXPacketHeader);
         PCXBufferObj pBufObj = GetCXBufferObj(dwBufferLen);
         byte *pPacketData =(byte *)pBufObj->wsaBuf.buf;
@@ -894,7 +961,7 @@ namespace CXCommunication
         }
 
         DWORD dwCheckSum = 0;
-        for (int i = 0; i<dwLen; i++)
+        for (DWORD i = 0; i<dwLen; i++)
         {
             dwCheckSum += (unsigned int)pbyPacketBodyData[i];
         }
@@ -941,5 +1008,59 @@ namespace CXCommunication
     {
         m_lockRead.Unlock();
     }
+
+    void CXConnectionObject::RecordReleasedTime()
+    {
+        m_tmReleasedTime = GetTickCountValue();
+    }
+
+    // get the current time
+    uint64 CXConnectionObject::GetTickCountValue()
+    {
+        uint64 tmTime = 0;
+#ifdef WIN32
+        tmTime = GetTickCount64();
+#else
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 0;
+        gettimeofday(&tv, NULL);
+        tmTime = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+#endif
+        
+        return tmTime;
+    }
+
+	//pszTimeString: if not NULL,will save the time string , the format is: 2019-07-31_15:39:29
+	int64 CXConnectionObject::GetCurrentTimeMS(char *pszTimeString)
+	{
+		typedef chrono::time_point<chrono::system_clock, chrono::milliseconds> MsClockType;
+		MsClockType tp = chrono::time_point_cast<chrono::milliseconds>(chrono::system_clock::now());
+
+		if (pszTimeString != NULL)
+		{
+			time_t timeCur = chrono::system_clock::to_time_t(tp);
+			DWORD dwMillsSecond = (DWORD)(timeCur % 1000);
+			std::strftime(pszTimeString, 60, "%Y-%m-%d_%H:%M:%S", std::localtime(&timeCur));
+			char szMSTime[10] = { 0 };
+			sprintf_s(szMSTime, 10, ".%d", dwMillsSecond);
+			strcat(pszTimeString, szMSTime);
+		}
+
+		return (int64)tp.time_since_epoch().count();
+	}
+
+	//output the operation information to the journal log;
+	void CXConnectionObject::OutputJournal(PCXMessageData pMes, int64 iBeginTimsMS)
+	{
+		if (m_pJouralLogHandle == NULL)
+			return;
+
+		int64 iEndTime = GetCurrentTimeMS();
+		char szInfo[1024] = {0};
+		sprintf_s(szInfo, 1024, "code:%d length:%d used_time:%lldms\n",
+			pMes->bodyData.dwMesCode, pMes->dwDataLen, iEndTime- iBeginTimsMS);
+		m_pJouralLogHandle->Log(CXLog::CXLOG_INFO,szInfo);
+	}
 
 }

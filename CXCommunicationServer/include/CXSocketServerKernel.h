@@ -59,7 +59,7 @@ namespace CXCommunication
 
             virtual int OnAccept(void *pServer, cxsocket sock, sockaddr_in &addrRemote);
             virtual int OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-                DWORD dwTransDataOfBytes);
+                DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
             virtual int OnWrite(CXConnectionObject& conObj);
             virtual void OnClose(CXConnectionObject& conObj, ConnectionClosedType emClosedType);
 
@@ -81,13 +81,13 @@ namespace CXCommunication
 #ifdef WIN32
             //windows iocp event process
             BOOL ProcessIOCPEvent(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-                DWORD dwTransDataOfBytes);
+                DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
 
             BOOL ProcessIocpErrorEvent(CXConnectionObject& conObj, LPOVERLAPPED lpOverlapped,
-                DWORD dwTransDataOfBytes);
+                DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
 #else
             //windows epoll event process
-            int ProcessEpollEvent(CXConnectionObject& conObj);
+            int ProcessEpollEvent(CXConnectionObject& conObj, byte* pbyThreadCache, DWORD dwCacheLen);
 #endif
         protected:
 

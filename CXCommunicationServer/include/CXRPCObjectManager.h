@@ -15,10 +15,10 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#ifndef CXSESSIONSSMANAGER_H
-#define CXSESSIONSSMANAGER_H
+#ifndef CXRPCOBJECTMANAGER_H
+#define CXRPCOBJECTMANAGER_H
 
-#include "CXConnectionSession.h"
+#include "CXRPCObjectServer.h"
 
 #ifdef WIN32
 #include <unordered_map>
@@ -41,38 +41,27 @@ using namespace std;
 
 #include "CXSpinLock.h"
 #include <queue>
-#include "CXGuidGenerate.h"
 
 using namespace std;
 
 namespace CXCommunication
 {
-    class CXSessionsManager
+    class CXRPCObjectManager
     {
     public:
-        CXSessionsManager();
-        virtual ~CXSessionsManager();
+        CXRPCObjectManager();
+        virtual ~CXRPCObjectManager();
 
-        CXConnectionSession * GetFreeSession();
-
-        int  AddUsingSession(CXConnectionSession * pObj);
-        void CloseSession(CXConnectionSession * pObj, bool bNeedLockBySelf = true);
-        string BuildSessionGuid();
-
-        CXConnectionSession * FindUsingSession(string strSessionGuid);
-
-        void Destroy();
-
+        void Register(const string &strObjectGuid, CXRPCObjectServer *pObj);
+        CXRPCObjectServer * GetRPCObject(const string &strObjectGuid);
         void Lock();
         void UnLock();
 
     protected:
     private:
-        unordered_map<string, CXConnectionSession *> m_mapUsingSessions;
-        queue<CXConnectionSession*> m_queueFreeSessions;
+        unordered_map<string, CXRPCObjectServer *> m_mapRegisterObject;
         CXSpinLock m_lock;
-        CXGuidGenerate m_cxGuidGenerater;
     };
 }
-#endif //CXSESSIONSSMANAGER_H
+#endif //CXRPCOBJECTMANAGER_H
 

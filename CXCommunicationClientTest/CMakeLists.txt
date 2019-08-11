@@ -1,10 +1,10 @@
 cmake_minimum_required (VERSION 2.6)
-project (CXCommunicationClient)
+project (CXCommunicationClientTestTest)
 
 
 # The version number.
-set (CXCommunicationClient_VERSION_MAJOR 1)
-set (CXCommunicationClient_VERSION_MINOR 0)
+set (CXCommunicationClientTestTest_VERSION_MAJOR 1)
+set (CXCommunicationClientTestTest_VERSION_MINOR 0)
 
 
 
@@ -15,11 +15,11 @@ INCLUDE_DIRECTORIES(
 ../CXSocketWrapper/include
 ../CXThread/include
 ../CXLog/include
+../CXCommunicationClient/include
 ./include
 )
 
 aux_source_directory(src DIR_SRCS)
-aux_source_directory(../CXCommon/src DIR_COMMON_SRCS)
 
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
@@ -47,38 +47,32 @@ ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     LINK_DIRECTORIES(../../lib)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
-
-SET(LIBRARY_OUTPUT_PATH ../../lib)
-
-ADD_LIBRARY(CXCommunicationClient SHARED ${DIR_COMMON_SRCS} ${DIR_SRCS})
-#添加静态库
-ADD_LIBRARY(CXCommunicationClient_static STATIC ${DIR_COMMON_SRCS} ${DIR_SRCS})
-
 #add executable file
-#add_executable(CXCommunicationClient ${DIR_SRCS} main.cpp )
+add_executable(CXCommunicationClientTest ${DIR_SRCS} main.cpp )
 
-TARGET_LINK_LIBRARIES(CXCommunicationClient ${LIBRARIES})
+TARGET_LINK_LIBRARIES(CXCommunicationClientTest ${LIBRARIES})
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    TARGET_LINK_LIBRARIES(CXCommunicationClient CXLock_static.lib)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient CXEvent_static.lib)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient CXSocketWrapper_static.lib)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient CXThread_static.lib)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient cxlog_static.lib)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient cxfile_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest CXLock_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest CXEvent_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest CXSocketWrapper_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest CXThread_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest cxlog_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest cxfile_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationClientTest CXCommunicationClient_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    TARGET_LINK_LIBRARIES(CXCommunicationClient libCXLock.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient libCXEvent.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient libCXSocketWrapper.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient libCXThread.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient libcxlog.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient libcxfile.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient uuid)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXLock.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXEvent.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXSocketWrapper.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXThread.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest libcxlog.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationClientTest libcxfile.so)
+	TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXCommunicationClient.so)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 
 
-#TARGET_LINK_LIBRARIES（CXCommunicationClient debug 3PDebugLib）
-#TARGET_LINK_LIBRARIES（CXCommunicationClient optimized 3PReleaseLib）
+#TARGET_LINK_LIBRARIES（CXCommunicationClientTest debug 3PDebugLib）
+#TARGET_LINK_LIBRARIES（CXCommunicationClientTest optimized 3PReleaseLib）
 
 #add executable file
 #ADD_EXECUTABLE(../bin/bin ${TEST_MATH})

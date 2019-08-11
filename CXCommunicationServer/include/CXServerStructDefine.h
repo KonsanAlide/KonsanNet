@@ -38,6 +38,7 @@ namespace CXCommunication
     
 #ifndef WIN32
     typedef struct _WSABUF {
+		//the left data length needed to process
         DWORD len; 
         char *buf;
     } WSABUF, *LPWSABUF;
@@ -68,7 +69,7 @@ namespace CXCommunication
         #define OP_WRITE   3
         int nOperate;
 
-        char buf[BUF_SIZE];
+        char buf[CX_BUF_SIZE];
     }CXBufferObj, *PCXBufferObj;
 
 

@@ -31,8 +31,8 @@ Description£º
 #include "CXMessageQueue.h"
 #include "CXConnectionObject.h"
 #include "CXSessionsManager.h"
-#include "CXSessionMessageProcess.h"
-#include "CXUserMessageProcessBase.h"
+#include "CXLog.h"
+#include "CXRPCObjectManager.h"
 namespace CXCommunication
 {
     class CXMessageProcessLevelBase
@@ -49,19 +49,20 @@ namespace CXCommunication
         void Stop();
         virtual int ProcessConnectionError(CXConnectionObject * pCon);
 
-        void SetUserMessageProcessHandle(CXUserMessageProcessBase * handle) { m_pUserMessageProcess = handle; }
-        CXUserMessageProcessBase *GetUserMessageProcessHandle() { return m_pUserMessageProcess; }
+		void SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
+		CXLog *GetLogHandle() { return m_pLogHandle; }
 
-        void SetSessionMessageProcessHandle(CXSessionLevelBase * handle) { m_pSessionLevelProcess = handle; }
-        CXSessionLevelBase *GetSessionMessageProcessHandle() { return m_pSessionLevelProcess; }
+        void SetRPCObjectManager(CXRPCObjectManager * handle) { m_pRPCObjectManager = handle; }
+        CXRPCObjectManager *GetRPCObjectManager() { return m_pRPCObjectManager; }
 
     private:
         CXThread m_threadProcess;
         CXMessageQueue *m_pMessageQueue;
-        CXSessionLevelBase *m_pSessionLevelProcess;
-        CXUserMessageProcessBase *m_pUserMessageProcess;
 
-        bool m_bStart;
+        bool   m_bStart;
+		CXLog *m_pLogHandle;
+
+        CXRPCObjectManager *m_pRPCObjectManager;
     };
 }
 #endif // CXMESSAGEPROCESSLEVLBASE_H

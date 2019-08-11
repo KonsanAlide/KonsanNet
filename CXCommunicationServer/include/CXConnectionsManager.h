@@ -44,6 +44,7 @@ using namespace std;
 #include "CXThread.h"
 #include "CXEvent.h"
 #include "SocketDefine.h"
+#include "CXLog.h"
 using namespace std;
 
 namespace CXCommunication
@@ -80,15 +81,22 @@ namespace CXCommunication
 
             void Stop();
 
+            void ReleaseConnection(CXConnectionObject * pObj);
+
+            void SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
+            CXLog *GetLogHandle() { return m_pLogHandle; }
+
         protected:
         private:
             unordered_map<uint64, CXConnectionObject *> m_mapPendingConnections;
             unordered_map<uint64, CXConnectionObject *> m_mapUsingConnections;
             queue<CXConnectionObject *> m_queueFreeConnections;
+            list<CXConnectionObject *> m_listReleasedConnections;
             uint64 m_uiCurrentConnectionIndex;
             CXSpinLock m_lockFreeConnections;
             CXSpinLock m_lockUsingConnections;
             CXSpinLock m_lockPendingConnections;
+            CXSpinLock m_lockReleasedConnections;
 
             //the thread used to detect the timeout event of the connections
             //contain the process of the pending connections
@@ -96,7 +104,8 @@ namespace CXCommunication
             //the closed event process function in the CXCommunicationServer class 
             POnClose              m_pfOnClose;
             CXEvent               m_eveWaitDetect;
-            bool      m_bStarted;
+            bool                   m_bStarted;
+            CXLog                *m_pLogHandle;
 
     };
 }

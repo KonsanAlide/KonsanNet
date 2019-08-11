@@ -18,19 +18,33 @@ Description£º
 #ifndef CXSESSIONLEVLBASE_H
 #define CXSESSIONLEVLBASE_H
 
+#include "CXRPCObjectServer.h"
 #include "CXServerStructDefine.h"
 #include "CXSessionsManager.h"
 namespace CXCommunication
 {
-    class CXSessionLevelBase
+    class CXSessionLevelBase: public CXRPCObjectServer
     {
     public:
         CXSessionLevelBase();
         virtual ~CXSessionLevelBase();
 
-        virtual int SessionLogin(PCXMessageData pMes, CXConnectionSession ** ppSession)=0;
-        virtual int SessionLogout(PCXMessageData pMes, CXConnectionSession &session)=0;
-        virtual int SessionSetting(PCXMessageData pMes, CXConnectionSession &session)=0;
+        virtual string GetObjectName() { return "CXConnectionLoginV1"; }
+
+        virtual int ProcessMessage(PCXMessageData pMes);
+
+        virtual int SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen);
+
+        virtual CXRPCObjectServer* CreateObject();
+
+        virtual void Destroy();
+
+        virtual void RecordSlowOps(PCXMessageData pMes);
+
+    protected:
+        virtual int SessionLogin(PCXMessageData pMes);
+        virtual int SessionLogout(PCXMessageData pMes, CXConnectionSession &session);
+        virtual int SessionSetting(PCXMessageData pMes, CXConnectionSession &session);
     };
 }
 #endif // CXSESSIONLEVLBASE_H

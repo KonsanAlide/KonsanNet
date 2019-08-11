@@ -8,6 +8,7 @@ set (CXCommunicationFramework_VERSION_MINOR 0)
 
 SET(CMAKE_BUILD_TYPE "Debug")
 
+add_definitions(-std=c++11)
 
 # Add the source in project root directory
 
@@ -18,23 +19,22 @@ SET(CMAKE_BUILD_TYPE "Debug")
 add_subdirectory(CXCommon)
 add_subdirectory(CXEvent)
 add_subdirectory(CXLock)
-add_subdirectory(CXMemoryCache)
-add_subdirectory(CXSocketWrapper)
 add_subdirectory(CXThread)
 add_subdirectory(CXLog)
 add_subdirectory(CXFile)
 add_subdirectory(CXContainer)
+add_subdirectory(CXMemoryCache)
+add_subdirectory(CXSocketWrapper)
 add_subdirectory(CXCommunicationClient)
 add_subdirectory(CXCommunicationServer)
 add_subdirectory(CXCommunicationServerTest)
+add_subdirectory(CXCommunicationClientTest)
+
 
 
 # Target
 
-add_executable(CXCommunicationFramework main.cpp)
-
-
-
+# add_executable(CXCommunicationFramework main.cpp)
 
 #add executable file  
 #ADD_EXECUTABLE(../bin/bin ${TEST_MATH})  

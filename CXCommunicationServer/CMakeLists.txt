@@ -22,7 +22,7 @@ INCLUDE_DIRECTORIES(
 )
 
 aux_source_directory(src DIR_SRCS)
-
+aux_source_directory(../CXCommon/src DIR_COMMON_SRCS)
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
  SET(option WIN32)
@@ -54,11 +54,13 @@ ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 
+SET(LIBRARY_OUTPUT_PATH ../../lib)
+
 #add executable file
 #add_executable(CXCommunicationServer ${DIR_SRCS} main.cpp )
-ADD_LIBRARY(CXCommunicationServer SHARED ${DIR_SRCS})
+ADD_LIBRARY(CXCommunicationServer SHARED ${DIR_COMMON_SRCS} ${DIR_SRCS})
 #添加静态库
-ADD_LIBRARY(CXCommunicationServer_static STATIC ${DIR_SRCS})
+ADD_LIBRARY(CXCommunicationServer_static STATIC ${DIR_COMMON_SRCS} ${DIR_SRCS})
 
 TARGET_LINK_LIBRARIES(CXCommunicationServer ${LIBRARIES})
 

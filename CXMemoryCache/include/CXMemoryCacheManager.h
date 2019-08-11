@@ -19,9 +19,12 @@ Description£ºThis class manage some memory cache object,a memory cache object
 *****************************************************************************/
 #ifndef CXMEMORYCACHEMANAGER_H
 #define CXMEMORYCACHEMANAGER_H
-#include "../../CXCommon/include/PlatformDataTypeDefine.h"
-#include "../../CXLock/include/CXSpinLock.h"
-#include "CXMemoryCache.h"
+#include "PlatformDataTypeDefine.h"
+#include "CXSpinLock.h"
+#include "CXElasticMemoryCache.h"
+#include "CXThread.h" 
+#include "CXEvent.h"
+
 #ifdef WIN32
 #include <unordered_map>
 using namespace std;
@@ -44,6 +47,10 @@ using namespace __gnu_cxx;
 using namespace std;
 //The maximum number of a class of cache
 #define MAX_CACHE_NUMBER_IN_ONE_KIND 10
+
+//the size of the cache array number
+const int CX_CACHE_ARRAY_SIZE = 13;
+
 class CXMemoryCacheManager
 {
 public:
@@ -62,10 +69,10 @@ public:
     //get a memory cache object,this memory cache object have contains
     //a lot of continuous small memory blocks of the same size,
     //the size of the small memory blocks had been set to iObjectSize
-    CXMemoryCache* GetMemoryCache(DWORD dwObjectSize);
+	CXElasticMemoryCache* GetMemoryCache(DWORD dwObjectSize);
 
     //free a CXMemoryCache object to the cache manager
-    void FreeMemoryCache(CXMemoryCache *pObj);
+    void FreeMemoryCache(CXElasticMemoryCache *pObj);
 
     void * GetBuffer(DWORD dwObjectSize);
     void   FreeBuffer(void *pBuf);
@@ -87,6 +94,8 @@ public:
     void   SetMaxObjectSize(DWORD dwSize) { m_dwMaxObjectSize = dwSize; }
     DWORD  GetMaxObjectSize() {return m_dwMaxObjectSize;}
 
+    int    CheckCachePool();
+
 protected:
     //add a memory cache
     //iObjectSize: the object size in the memory cache
@@ -96,10 +105,12 @@ protected:
     //             ==-1 invalid parameter
     //             ==-2 failed to allocate memory 
     //             ==-3 the number of this kind cache is more than  MAX_CACHE_NUMBER_IN_ONE_KIND
-    int AddCache(DWORD dwObjectSize, DWORD dwObjectNumber,int iIndex=-1 );
+    int AddCache(DWORD dwObjectSize, DWORD dwObjectNumber,int iIndex=-1, bool bInitAtOnce = true);
 
 private:
     int CalculateIndex(DWORD dwObjectSize);
+
+	CXElasticMemoryCache* AllocCacheAndInit(DWORD dwObjectSize, DWORD dwObjectNumber,bool bInitAtOnce = true);
 
 
 private:
@@ -108,12 +119,12 @@ private:
     //the object size of in the memory cache range as : 256B,512B,1KB,2KB,4KB,8KB,16KB,32KB,64KB,128KB,256KB,512KB,1MB
     //1MB=256*£¨2^12£©bytes
     //the maximum size of the object is 1MB
-    CXMemoryCache** m_ppCaches[13];
+	CXElasticMemoryCache** m_ppCaches[CX_CACHE_ARRAY_SIZE];
 
     //the map of the cache array,
     //the key is the small memory blocks size of the memory cache,
     //the value is the memory cache array pointers
-    unordered_map<int, CXMemoryCache**> m_mapCaches;
+    unordered_map<int, CXElasticMemoryCache**> m_mapCaches;
     CXSpinLock m_lock;
 
     //The initialized number of a class of cache
@@ -124,6 +135,11 @@ private:
 
     // the maximum size of the object in the memory cache
     DWORD  m_dwMaxObjectSize;
+
+    CXThread m_thread;
+    CXEvent  m_eveWaitCheck;
+
+    bool   m_bRunning;
 
 };
 #endif // CXMEMORYCACHEMANAGER_H

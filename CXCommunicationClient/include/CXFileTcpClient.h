@@ -18,15 +18,13 @@ Description£º
 #ifndef __CXFILETCPCLIENT_H__
 #define __CXFILETCPCLIENT_H__
 
-#include "CXClientSocketChannel.h"
-#include "CXClientConnectionSession.h"
-#include "PlatformDataTypeDefine.h"
+#include "CXRPCObjectClient.h"
 #include <string>
 using namespace std;
 
 namespace CXCommunication
 {
-    class CXFileTcpClient
+    class CXFileTcpClient:public CXRPCObjectClient
     {
     public:
         enum SEEKTYPE
@@ -37,7 +35,7 @@ namespace CXCommunication
         };
         enum OPENTYPE
         {
-            modeRead,
+            modeRead=0,
             modeWrite,
             modeReadWrite,
             modeNoTruncateWrite,
@@ -47,33 +45,27 @@ namespace CXCommunication
     public:
         CXFileTcpClient();
         virtual ~CXFileTcpClient();
-        int  Open(string strRemoteFilePath,OPENTYPE type);
+		int  Open(CX_RPC_OBJECT_OPENTYPE type);
+        int  Open(string strRemoteFilePath,OPENTYPE type,bool bOpenExisted = false);
         int  Read(byte* pBuf,int iWantReadLen,int *piReadLen);
-        int  Seek(uint64 pos, SEEKTYPE type);
-        int  Write(const byte* pBuf, int iBufLen, int *piWrittenLen);
+        int  Seek(int64 pos, SEEKTYPE type);
+        int  Write(const byte* pBuf, int iBufLen, int *piWrittenLen,uint64 uiOffset=0, SEEKTYPE type = current);
         int  Close();
-        bool IsOpen() { return m_bIsOpened; }
-        void SetRemoteServerInfo(string strRemoteIP,unsigned short unRemotePort,
-            string strRemoteUser, string strRemotePassword);
+
         string GetFilePathName() { return m_strRemoteFilePath; }
         int GetFileLength(uint64 & uiFileLength);
-        byte * GetSendBuffer(DWORD &dwBufSize);
-        byte * GetRecvBuffer(DWORD &dwBufSize);
+
+        int  GetCurrentPosition(uint64 & uiPos);
+
+        //notify the peer to modify the size of the received buffer 
+        int  SetPeerRecvBufSize(DWORD dwSize);
+
+        //write some blocks, these blocks have different offset
+        int  WriteManyBlocks(const byte* pBuf, int iBufLen, int *piWrittenLen);
+
+		virtual string  GetObjectName() { return "CXFileTcpV1"; }
 
     private:
-        string m_strRemoteIP;
-        unsigned short m_unRemotePort;
-        string m_strRemoteFilePath;
-        CXClientSocketChannel m_cmmClient;
-        CXClientSocketChannel m_dataClient;
-        CXClientConnectionSession m_cxSession;
-
-        byte  m_byPacketData[CLIENT_BUF_SIZE];
-
-        string m_strRemoteUser;
-        string m_strRemotePassword;
-
-        bool   m_bIsOpened;
     };
 }
 
