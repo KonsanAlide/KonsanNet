@@ -1,5 +1,5 @@
 /****************************************************************************
-Copyright (c) 2018-2019 Charles Yang
+Copyright (c) 2018 Charles Yang
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,22 +15,21 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#ifndef __CXFILERPCSERVER_H__
-#define __CXFILERPCSERVER_H__
+#ifndef __CXUNKNOWNRPCOBJECT_H__
+#define __CXUNKNOWNRPCOBJECT_H__
 
 #include "CXRPCObjectServer.h"
-#include "CXFilePacketStructure.h"
-#include "CXFile64.h"
-
+#include "CXServerStructDefine.h"
+#include "CXSessionsManager.h"
 namespace CXCommunication
 {
-    class CXFileRPCServer : public CXRPCObjectServer
+    class CXUnknownRPCObject: public CXRPCObjectServer
     {
     public:
-        CXFileRPCServer();
-        ~CXFileRPCServer();
+		CXUnknownRPCObject();
+        virtual ~CXUnknownRPCObject();
 
-        virtual string GetObjectName() { return "CXFileTcpV1"; }
+        virtual string GetObjectName() { return "CXUnknownObjectV1"; }
 
         virtual int DispatchMes(PCXMessageData pMes);
 
@@ -41,24 +40,6 @@ namespace CXCommunication
         virtual void Destroy();
 
         virtual void MessageToString(PCXMessageData pMes);
-
-
-		int    OpenFile(PCXFileOpenFile pData, DWORD dwDataLen,CXConnectionObject *pCon);
-		int    CloseFile(PCXFileClose pData, DWORD dwDataLen, CXConnectionObject *pCon);
-		int    Write(PCXFileWrite pData, DWORD dwDataLen, CXConnectionObject *pCon);
-		int    Read(PCXFileRead pData, DWORD dwDataLen, CXConnectionObject *pCon);
-		int    Seek(PCXFileSeek pData, DWORD dwDataLen, CXConnectionObject *pCon);
-
-		int    GetFileLength(CXConnectionObject *pCon);
-
-		int    GetCurrentFilePosition(CXConnectionObject *pCon);
-
-		int    SendPacket(const byte* pbData, DWORD dwLen, DWORD dwMesCode, CXConnectionObject *pCon);
-
-    private:
-        CXFile64 m_file;
-		string   m_strCurrentFilePath;
     };
 }
-#endif //__CXFILERPCSERVER_H__
-
+#endif // __CXUNKNOWNRPCOBJECT_H__

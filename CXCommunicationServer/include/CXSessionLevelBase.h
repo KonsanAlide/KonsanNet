@@ -31,7 +31,7 @@ namespace CXCommunication
 
         virtual string GetObjectName() { return "CXConnectionLoginV1"; }
 
-        virtual int ProcessMessage(PCXMessageData pMes);
+        virtual int DispatchMes(PCXMessageData pMes);
 
         virtual int SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen);
 
@@ -39,7 +39,7 @@ namespace CXCommunication
 
         virtual void Destroy();
 
-        virtual void RecordSlowOps(PCXMessageData pMes);
+        virtual void MessageToString(PCXMessageData pMes);
 
     protected:
         virtual int SessionLogin(PCXMessageData pMes);

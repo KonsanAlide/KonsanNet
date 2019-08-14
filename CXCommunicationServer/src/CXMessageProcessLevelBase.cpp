@@ -61,7 +61,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
 {
     int iRet = 0;
     int iLoopNum = 0;
-	int64 iBeginTime = 0;
+	int64 iBeginTimeInProcess = 0;
     CXGuidObject guidObj(false);
     CXMessageQueue * pQueue = GetMessageQueue();
     while (IsStart())
@@ -76,7 +76,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
                 CXConnectionObject *pCon = (CXConnectionObject*)pMes->pConObj;
                 if (pCon != NULL)
                 {
-                    pCon->AddProcessPacketNumber();
+                    //pCon->AddProcessPacketNumber();
                 }
 				else
 				{
@@ -86,7 +86,9 @@ int CXMessageProcessLevelBase::ProcessMessage()
 					return -1;
 				}
 
-				iBeginTime = pCon->GetCurrentTimeMS(NULL);
+				iRet = pCon->ProcessUnpackedMessage(pMes);
+				/*
+				iBeginTimeInProcess = pCon->GetCurrentTimeMS(NULL);
                 iRet = 0;
 
                 CXConnectionSession * pSession = (CXConnectionSession *)pCon->GetSession();
@@ -99,47 +101,48 @@ int CXMessageProcessLevelBase::ProcessMessage()
                     if (strObjectGuid != "")
                     {
                         CXRPCObjectServer * pObjectServer = NULL;
-                        DWORD dwMessageCode = pMes->bodyData.dwMesCode;
-                        if (dwMessageCode == CX_SESSION_LOGIN_CODE
-                            || dwMessageCode == CX_SESSION_LOGOUT_CODE
-                            || dwMessageCode == CX_SESSION_SETITING_CODE)
+                        if (pSession != NULL)
                         {
-                            bLoginMes = true;
-                            pObjectServer = m_pRPCObjectManager->GetRPCObject(strObjectGuid);
-                            if (pObjectServer == NULL)
-                            {
-                                char szInfo[1024] = { 0 };
-                                sprintf_s(szInfo, 1024, "Not found the object %s, maybe not registered\n", strObjectGuid.c_str());
-                                m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                                //base login object
-                                strObjectGuid = "{6E34084E-970B-427F-A973-2763A19D7C07}";
-                                continue;
-                            }
+                            pSession->Lock();
+                            pObjectServer = (CXRPCObjectServer *)pSession->GetData(strObjectGuid, false);
+                        }
+
+                        if (pObjectServer != NULL)
+                        {
+							if (pSession != NULL)
+								pSession->UnLock();
                         }
                         else
                         {
-                            pSession->Lock();
-                            pObjectServer = (CXRPCObjectServer *)pSession->GetData(strObjectGuid,false);
+                            pObjectServer = m_pRPCObjectManager->GetRPCObject(strObjectGuid);
                             if (pObjectServer != NULL)
                             {
-                                pSession->UnLock();
+								if (!pObjectServer->IsUniqueInstance())
+								{
+									if(pSession!=NULL)
+										pSession->SetData(strObjectGuid, (void*)pObjectServer, false);
+									pObjectServer->SetSession(pSession);
+								}
+								pObjectServer->SetLogHandle(pCon->GetLogHandle());
+								pObjectServer->SetJournalLogHandle(pCon->GetJournalLogHandle());
+								pObjectServer->SetIOStat(pCon->GetIOStat());
                             }
-                            else
+                            else //unknown object
                             {
-                                pObjectServer = m_pRPCObjectManager->GetRPCObject(strObjectGuid);
-                                if (pObjectServer != NULL)
-                                {
-                                    pSession->SetData(strObjectGuid, (void*)pObjectServer,false);
-                                }
-                                else
-                                {
-                                    char szInfo[1024] = { 0 };
-                                    sprintf_s(szInfo, 1024, "Not found the object %s, maybe not registered\n", strObjectGuid.c_str());
-                                    m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                                }
-                                pSession->UnLock();
+								char szInfo[1024] = { 0 };
+								sprintf_s(szInfo, 1024, "Not found the object %s, maybe not registered\n", strObjectGuid.c_str());
+								m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
+								strObjectGuid = "{0307F567-72FC-4355-8192-9E37DC766D2E}";
+								if (pSession != NULL)
+									pSession->UnLock();
+								continue;
+                                
                             }
+							if (pSession != NULL)
+								pSession->UnLock();
                         }
+                        
 
                         if (pObjectServer != NULL)
                         {
@@ -154,13 +157,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
                                     pCon->UnLock();
                                 }
                             }
-                        }
-                        if (bLoginMes)
-                        {
-                            //the login object can be a unique object
-                            if(!pObjectServer->IsUniqueInstance())
-                                delete pObjectServer;
-                        }
+                        }  
                     }
                     else
                     {
@@ -171,7 +168,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
                     break;
                 }
 
-				pCon->OutputJournal(pMes,iBeginTime);
+				//pCon->OutputJournal(pMes,iBeginTime);
                 pCon->FreeBuffer(pMes);
 
                 //<Process the closing event of this socket>
@@ -196,7 +193,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
                 {
                     pCon->ReduceReceivedPacketNumber();
                 }
-
+				*/
                 //g_lock.Lock();
                 //g_iTotalProcessMessage++;
                 //g_lock.Unlock();

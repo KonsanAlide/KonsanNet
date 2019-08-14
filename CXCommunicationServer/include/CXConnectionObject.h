@@ -27,6 +27,7 @@ Description£º
 #include "CXMutexLock.h"
 #include "CXLog.h"
 #include "CXDataParserImpl.h"
+#include "CXIOStat.h"
 using namespace std;
 
 namespace CXCommunication
@@ -107,9 +108,6 @@ namespace CXCommunication
             void SetDispacherQueueIndex(int iIndex) { m_iDispacherQueueIndex= iIndex; }
             int  GetDispacherQueueIndex() { return m_iDispacherQueueIndex; }
 
-            uint64 GetProcessPacketNumber() { return m_iProcessPacketNumber; }
-            void AddProcessPacketNumber();
-
             uint64 GetNumberOfReceivedBufferInList() { return m_uiNumberOfReceivedBufferInList; }
 
             uint64 GetNumberOfReceivedPacketInQueue() { return m_uiNumberOfReceivedPacketInQueue; }
@@ -159,8 +157,8 @@ namespace CXCommunication
             // get the tick count value 
             uint64 GetTickCountValue();
 
-			void SetJournalLogHandle(CXLog * handle) { m_pJouralLogHandle = handle; }
-			CXLog *GetJournalLogHandle() { return m_pJouralLogHandle; }
+			void SetJournalLogHandle(CXLog * handle) { m_pJournalLogHandle = handle; }
+			CXLog *GetJournalLogHandle() { return m_pJournalLogHandle; }
 
 			//pszTimeString: if not NULL,will save the time string , the format is: 2019-07-31_15:39:29
 			//return value : the current time 
@@ -168,6 +166,21 @@ namespace CXCommunication
 
 			//output the operation information to the journal log;
 			void   OutputJournal(PCXMessageData pMes,int64 iBeginTimsMS);
+
+			void   SetIOStat(CXIOStat * pHandle) { m_pIOStatHandle = pHandle; }
+			CXIOStat*GetIOStat() { return m_pIOStatHandle; }
+
+			uint64 GetLastProcessedMessageSequenceNum() { return m_uiLastProcessedMessageSequenceNum; }
+
+			//if the message is not the next need-processed message, will add it in the list,
+			//process the unpacked message,use the object to prcess the next message
+			int    ProcessUnpackedMessage(PCXMessageData pMes);
+
+			//push this message in the message list, sorted by the sequence number of the message
+			bool   PushMessage(PCXMessageData pMes);
+
+			void SetRPCObjectManager(void * handle) { m_pRPCObjectManager = handle; }
+			void *GetRPCObjectManager() { return m_pRPCObjectManager; }
 
         protected:
         private:
@@ -185,6 +198,7 @@ namespace CXCommunication
             uint64 m_uiRecvBufferIndex;
             uint64 m_uiSendBufferIndex;
 
+			//the index of the last processed buffer
             uint64 m_uiLastProcessBufferIndex;
 
             //==0 initialize
@@ -241,7 +255,13 @@ namespace CXCommunication
             // the number of the buffer by posting to iocp model
             uint64 m_uiNumberOfPostBuffers;
 
-            uint64 m_iProcessPacketNumber;
+			//the sequence number of the last unpacked message,
+			//this sequence number will be filled in the message structure CXMessageData,
+			//will be used in the sequence number of the sent data list
+            uint64 m_iLastUnpackedMessageSequenceNum;
+
+			//the sequence number of the last processed message
+			uint64 m_uiLastProcessedMessageSequenceNum;
 
             void * m_pSessionsManager;
             void * m_pSession;
@@ -258,7 +278,18 @@ namespace CXCommunication
             uint64 m_tmReleasedTime;
 
 			//record journal log
-			CXLog  *m_pJouralLogHandle;
+			CXLog  *m_pJournalLogHandle;
+
+			CXIOStat *m_pIOStatHandle;
+
+			// the  header of the unpacked message list
+			PCXMessageData m_plstMessageHead;
+
+			// the end of the unpacked message list
+			PCXMessageData m_plstMessageEnd;
+
+			void *m_pRPCObjectManager;
+
     };
 
 }

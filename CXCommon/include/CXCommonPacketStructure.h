@@ -62,7 +62,11 @@ typedef struct _CX_MESSAGE_DATA
 {
     DWORD dwType;
     DWORD dwDataLen;
+	int64 iBeginTime;
+	//the sequence number of the received packet 
+	int64 iSequenceNum;
     void  *pConObj;
+	_CX_MESSAGE_DATA *pNext;
     CXPacketBodyData bodyData;
 }CXMessageData, *PCXMessageData;
 #endif

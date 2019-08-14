@@ -64,6 +64,9 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
         return -2;
     }
 
+    m_ioStat.SetLogHandle(m_pLogHandle);
+	m_ioStat.Start();
+
     m_connectionsManager.SetLogHandle(m_pLogHandle);
 
     m_socketServerKernel.SetOnReadCallbackFun(CXCommunicationServer::OnRecv);
@@ -156,6 +159,7 @@ int CXCommunicationServer::Stop()
         delete pProcessObj;
     }
     m_bRunning = false;
+	m_ioStat.Stop();
     return RETURN_SUCCEED;
 }
 
@@ -350,6 +354,8 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
         pConObj->SetSessionsManager(&sessionsManager);
         pConObj->SetLogHandle(pComServer->GetLogHandle());
 		pConObj->SetJournalLogHandle(pComServer->GetJournalLogHandle());
+        pConObj->SetIOStat(pComServer->GetIOStatHandle());
+		pConObj->SetRPCObjectManager(pComServer->GetRPCObjectManager());
 
 
         //char *str = inet_ntoa(sockRemote.sin_addr);

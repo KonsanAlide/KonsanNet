@@ -59,7 +59,8 @@ namespace CXCommunication
         //the start point of the left data 
         int nCurDataPointer;
 
-        //the sequence number of this buffer
+        //the sequence number of this buffer,
+		//maybe a sequence number of the received packet
         uint64 nSequenceNum;
 
         _CX_BUFFER_OBJ * pNext;

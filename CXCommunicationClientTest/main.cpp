@@ -16,9 +16,11 @@
 
 #include "CXClientConnectionSession.h"
 
-//const string g_strDestIP = "127.0.0.1";
+const string g_strDestIP = "127.0.0.1";
 //const string g_strDestIP = "192.168.0.104";
-const string g_strDestIP = "192.168.0.118";
+//const string g_strDestIP = "192.168.0.118";
+
+const int iTestThreadNum = 51;
 
 using namespace std;
 using namespace CXCommunication;
@@ -179,12 +181,12 @@ int main()
     while (k++<1000)
     {
         int i = 0;
-        for (i = 0; i < 51; i++)
+        for (i = 0; i < iTestThreadNum; i++)
         {
             workThread[i].Start(ThreadWork, (void*)i);
         }
 
-        for (i = 0; i < 51; i++)
+        for (i = 0; i < iTestThreadNum; i++)
         {
             workThread[i].Wait();
         }

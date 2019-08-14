@@ -55,7 +55,7 @@ CXFile64::CXFile64()
 
 CXFile64::~CXFile64()
 {
-
+	Close();
 }
 
 bool CXFile64::Open(string strFilePath, OPENTYPE type, DWORD dwFlagsAndAttributes, BOOL bOnlyOpenExistingFile)

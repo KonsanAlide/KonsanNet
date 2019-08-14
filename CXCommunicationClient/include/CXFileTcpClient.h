@@ -60,9 +60,6 @@ namespace CXCommunication
         //notify the peer to modify the size of the received buffer 
         int  SetPeerRecvBufSize(DWORD dwSize);
 
-        //write some blocks, these blocks have different offset
-        int  WriteManyBlocks(const byte* pBuf, int iBufLen, int *piWrittenLen);
-
 		virtual string  GetObjectName() { return "CXFileTcpV1"; }
 
     private:

@@ -32,44 +32,46 @@ CXSessionLevelBase::~CXSessionLevelBase()
 }
 
 //return value:==-2 need to close the connection
-int CXSessionLevelBase::ProcessMessage(PCXMessageData pMes)
+int CXSessionLevelBase::DispatchMes(PCXMessageData pMes)
 {
-    DWORD dwMessageCode = pMes->bodyData.dwMesCode;
-    int iReceiveDataLen = pMes->dwDataLen;
+	int     iRet = RETURN_SUCCEED;
+
+    DWORD   dwMessageCode = pMes->bodyData.dwMesCode;
+    int     iReceiveDataLen = pMes->dwDataLen;
     CXConnectionObject *pCon = (CXConnectionObject*)pMes->pConObj;
     if (pCon == NULL)
     {
-        return INVALID_PARAMETER;
+		iRet= INVALID_PARAMETER;
     }
+	else
+	{
+		CXConnectionSession *pSession = (CXConnectionSession*)pCon->GetSession();
+		switch (dwMessageCode)
+		{
+		case CX_SESSION_LOGIN_CODE:
+			iRet = SessionLogin(pMes);
+			break;
+		case CX_SESSION_LOGOUT_CODE:
+			iRet = SessionLogout(pMes, *pSession);
+			if (iRet != RETURN_SUCCEED)
+			{
+				printf("SessionLogout fails\n");
+			}
+			break;
+		case CX_SESSION_SETITING_CODE:
 
-    CXConnectionSession *pSession = (CXConnectionSession*)pCon->GetSession();
-
-    int iRet = RETURN_SUCCEED;
-    switch (dwMessageCode)
-    {
-    case CX_SESSION_LOGIN_CODE:
-        iRet = SessionLogin(pMes);
-        break;
-    case CX_SESSION_LOGOUT_CODE:
-        iRet = SessionLogout(pMes, *pSession);
-        if (iRet != RETURN_SUCCEED)
-        {
-            printf("SessionLogout fails\n");
-        }
-        break;
-    case CX_SESSION_SETITING_CODE:
-
-        iRet = SessionSetting(pMes, *pSession);
-        if (iRet != RETURN_SUCCEED)
-        {
-            printf("SessionSetting fails\n");
-        }
-        break;
-    default:
-        {
-            break;
-        }
-    }
+			iRet = SessionSetting(pMes, *pSession);
+			if (iRet != RETURN_SUCCEED)
+			{
+				printf("SessionSetting fails\n");
+			}
+			break;
+		default:
+		{
+			break;
+		}
+		}
+	}
 
     return iRet;
 }
@@ -89,6 +91,63 @@ void CXSessionLevelBase::Destroy()
 {
 }
 
+void CXSessionLevelBase::MessageToString(PCXMessageData pMes)
+{
+	char  szInfo[1024] = { 0 };
+	CXGuidObject guidObj(false);
+	string strPacketGUID = guidObj.ConvertGuid(pMes->bodyData.byPacketGuid);
+
+	sprintf_s(szInfo, 1024, "session message, packet_guid:%s,message_code:%04d,message length:%d",
+		strPacketGUID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
+	m_strLastMessageContent = szInfo;
+	
+	int iRet = RETURN_SUCCEED;
+	switch (pMes->bodyData.dwMesCode)
+	{
+	case CX_SESSION_LOGIN_CODE:
+	{
+		string strValue1 = "";
+		string strValue2 = "";
+		PCXSessionLogin pPacket = (PCXSessionLogin)pMes->bodyData.buf;
+		pPacket->szUserData[pPacket->dwUserDataLen] = '\0';
+		
+		string strData = pPacket->szUserData;
+		size_t iPos = strData.find('\r');
+		if (iPos == string::npos)
+		{
+			strData = "";
+		}
+		else
+		{
+			strValue1 = strData.substr(0, iPos);
+			strValue2 = strData.substr(iPos+1, strData.length()-iPos-1);
+		}
+		
+		
+		if (pPacket->byConnectionType == 1)
+		{
+			sprintf_s(szInfo, 1024, ",user_name:%s",strValue1.c_str());
+		}
+		else
+		{
+			sprintf_s(szInfo, 1024, ",session_guid:%s, verification_code:%s",strValue1.c_str(), strValue2.c_str());
+		}
+		
+		m_strLastMessageContent += szInfo;
+        break;
+	}
+	case CX_SESSION_LOGOUT_CODE:
+		break;
+	case CX_SESSION_SETITING_CODE:
+		break;
+	default:
+	{
+		m_strLastMessageContent += ",unknown packet";
+		break;
+	}
+	}
+}
+
 int CXSessionLevelBase::SessionLogin(PCXMessageData pMes)
 {
     if (pMes == NULL)
@@ -101,9 +160,11 @@ int CXSessionLevelBase::SessionLogin(PCXMessageData pMes)
     DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
     byte  bySendBuf[1024] = { 0 };
     PCXCommonMessageReply pReply = (PCXCommonMessageReply)bySendBuf;
-    int i = 1;
+
+	DWORD dwLeftDataLen = 1024 - sizeof(CXCommonMessageReply) - 1;
+    int iLoop = 1;
     int iRet = RETURN_SUCCEED;
-    while (i-- > 0)
+    while (iLoop-- > 0)
     {
         PCXSessionLogin pPacket = (PCXSessionLogin)pMes->bodyData.buf;
         if (pPacket->dwUserDataLen <= 0 || pPacket->dwUserDataLen >= (pMes->dwDataLen))
@@ -123,24 +184,47 @@ int CXSessionLevelBase::SessionLogin(PCXMessageData pMes)
         }
         if (pSession == NULL)
         {
+			if (pPacket->dwUserDataLen > pMes->dwDataLen - (sizeof(CXSessionLogin) - 1))
+			{
+				iRet = -5;
+				pReply->dwReplyCode = 203;
+				sprintf_s(pReply->szData, dwLeftDataLen, "The login content length %d is wrong, has exceeded allowable size %d!",
+					pPacket->dwUserDataLen, pMes->dwDataLen - (sizeof(CXSessionLogin) - 1));
+				pReply->dwDataLen = strlen(pReply->szData) + 1;
+
+				m_pLogHandle->Log(CXLog::CXLOG_ERROR, pReply->szData);
+				break;
+			}
+			pPacket->szUserData[pPacket->dwUserDataLen] = '\0';
+
+			string strValue1 = "";
+			string strValue2 = "";
+			string strData = pPacket->szUserData;
+			size_t iPos = strData.find('\r');
+			if (iPos == string::npos)
+			{
+				strData = "";
+				iRet = -5;
+				pReply->dwReplyCode = 203;
+
+				sprintf_s(pReply->szData, dwLeftDataLen, "The format of login content is wrong!");
+				pReply->dwDataLen = strlen(pReply->szData) + 1;
+
+				m_pLogHandle->Log(CXLog::CXLOG_ERROR, pReply->szData);
+				break;
+			}
+			else
+			{
+				strValue1 = strData.substr(0, iPos);
+				strValue2 = strData.substr(iPos + 1, strData.length() - iPos - 1);
+			}
+			
+
             if (pPacket->byConnectionType == 1) //main message connections
             {
-                string strUserName = "";
-                string strPassword = "";
-                pPacket->szUserData[pPacket->dwUserDataLen] = '\0';
-                char* pPos = strchr(pPacket->szUserData, '\r');
-
-                if (pPos == NULL || (pPos - pPacket->szUserData) > (pPacket->dwUserDataLen - 1))
-                {
-                    iRet = -5;
-                    pReply->dwReplyCode = 203;
-                    break;
-                }
-
-                *pPos = '\0';
-                strUserName = pPacket->szUserData;
-                strPassword = pPos + 1;
-
+                string strUserName = strValue1;
+                string strPassword = strValue2;
+                
                 string strGuid = pManager->BuildSessionGuid();
 
                 //failed to allocate the session from the session manager
@@ -174,24 +258,9 @@ int CXSessionLevelBase::SessionLogin(PCXMessageData pMes)
                 pCon->GetLogHandle()->Log(CXLog::CXLOG_INFO, szInfo);
             }
             else
-            {
-                pPacket->szUserData[pPacket->dwUserDataLen] = '\0';
-
-                string strSessionGuid = "";
-                string strVerifyCode = "";
-                pPacket->szUserData[pPacket->dwUserDataLen] = '\0';
-                char* pPos = strchr(pPacket->szUserData, '\r');
-
-                if (pPos == NULL || (pPos - pPacket->szUserData) > (pPacket->dwUserDataLen - 1))
-                {
-                    iRet = -5;
-                    pReply->dwReplyCode = 203;
-                    break;
-                }
-
-                *pPos = '\0';
-                strSessionGuid = pPacket->szUserData;
-                strVerifyCode = pPos + 1;
+            {  
+                string strSessionGuid = strValue1;
+                string strVerifyCode = strValue2;
 
                 pSession = pManager->FindUsingSession(strSessionGuid);
                 if (pSession == NULL)
@@ -265,10 +334,6 @@ int CXSessionLevelBase::SessionSetting(PCXMessageData pMes, CXConnectionSession 
     return RETURN_SUCCEED;
 }
 
-void CXSessionLevelBase::RecordSlowOps(PCXMessageData pMes)
-{
-
-}
 
 
 

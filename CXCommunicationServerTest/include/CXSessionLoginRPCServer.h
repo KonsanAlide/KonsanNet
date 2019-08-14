@@ -34,7 +34,7 @@ namespace CXCommunication
 
         virtual void Destroy();
 
-        virtual void RecordSlowOps(PCXMessageData pMes);
+        virtual void MessageToString(PCXMessageData pMes);
 
     };
 }

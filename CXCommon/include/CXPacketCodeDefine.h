@@ -52,6 +52,6 @@ const map<string, string> g_mapRPCObjectGuid = {
 	{"CXConnectionLoginV1",  "{6E34084E-970B-427F-A973-2763A19D7C07}"},
 	{"CXRPCObjectV1",        "{2A3E8648-A997-4457-947C-23ABA77D815D}"},
 	{"CXFileTcpV1",          "{A888441E-F757-4775-B69A-CCEBD63156FB}"},
-	{"CXMoveDiskV1",         "{06C98D20-35A4-4450-B485-E3BC6FF8A41E}"}
+	{"CXUnknownObjectV1",    "{0307F567-72FC-4355-8192-9E37DC766D2E}"},
 };
 #endif //__CXPACKETCODEDEFINE_H__

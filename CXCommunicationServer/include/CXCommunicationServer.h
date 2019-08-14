@@ -34,6 +34,7 @@ Description£º
 #include "CXLog.h"
 #include "CXNetworkInitEnv.h"
 #include "CXRPCObjectManager.h"
+#include "CXIOStat.h"
 using namespace std;
 
 namespace CXCommunication
@@ -85,6 +86,10 @@ namespace CXCommunication
 
         void Register(const string &strObjectGuid, CXRPCObjectServer *pObj) { m_rpcObjectManager.Register(strObjectGuid, pObj); }
 
+        CXIOStat *GetIOStatHandle() { return &m_ioStat; }
+
+		CXRPCObjectManager *GetRPCObjectManager() { return &m_rpcObjectManager; }
+
     private:
         bool m_bRunning;
         CXSocketServerKernel m_socketServerKernel;
@@ -107,6 +112,8 @@ namespace CXCommunication
 		CXLog                *m_pJouralLogHandle;
 
         CXRPCObjectManager    m_rpcObjectManager;
+
+		CXIOStat m_ioStat;
     };
 }
 

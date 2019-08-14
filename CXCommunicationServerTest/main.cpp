@@ -8,6 +8,7 @@
 #include "CXRPCObjectManager.h"
 #include "CXSessionLevelBase.h"
 #include "PlatformFunctionDefine.h"
+#include "CXUnknownRPCObject.h"
 
 using namespace std;
 using namespace CXCommunication;
@@ -93,7 +94,6 @@ int main()
 	CoInitialize(NULL);
 #endif
 
-
     
     CXFastDataParserHandle *pDataParserHandle = NULL;
 
@@ -104,6 +104,11 @@ int main()
     CXSessionLevelBase *pSessionLoginHandle = new CXSessionLevelBase();
     server.Register(pSessionLoginHandle->GetGuid(),
         (CXRPCObjectServer*)pSessionLoginHandle);
+
+
+	CXUnknownRPCObject *pUnknownObj = new CXUnknownRPCObject();
+	server.Register(pUnknownObj->GetGuid(),
+		(CXRPCObjectServer*)pUnknownObj);
 
     server.SetDataParserHandle(pDataParserHandle);
     server.SetLogHandle(&m_logHandle);
@@ -129,6 +134,8 @@ int main()
     g_bRunning = true;
     CXThread threadCount;
     threadCount.Start(ThreadCount,NULL);
+
+
 
     cin.get();
     g_bRunning = false;

@@ -131,8 +131,12 @@ namespace CXCommunication
         for (; it != m_mapData.end();)
         {
             pObj = (CXRPCObjectServer *)it->second;
-            pObj->Destroy();
-            delete pObj;
+			if (pObj != NULL)
+			{
+				pObj->Destroy();
+				delete pObj;
+			}
+            
             it=m_mapData.erase(it);
         }
         

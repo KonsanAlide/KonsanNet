@@ -22,8 +22,8 @@ Description£º
 #include <map>
 #include <chrono>
 #include <ctime>
-using namespace std;
 
+using namespace std;
 using namespace CXCommunication;
 CXRPCObjectServer::CXRPCObjectServer()
 {
@@ -36,6 +36,13 @@ CXRPCObjectServer::CXRPCObjectServer()
     //if the process time of a operation is larger than  m_dwSlowOpsSecs senconds,
     //this operation is a slow operation ,must record it to log
     m_dwSlowOpsMS =1000;
+
+	m_strLastMessageContent = "";
+
+	m_pLogHandle=NULL;
+	m_pJournalLogHandle = NULL;
+	m_pSession = NULL;
+	m_pIOStatHandle = NULL;
 }
 
 
@@ -53,6 +60,63 @@ void CXRPCObjectServer::GetObjectGuid()
         CXGuidObject guidObject(false);
         guidObject.ConvertGuid(m_strObjectGuid, m_byObjectGuid);
     }
+}
+
+int CXRPCObjectServer::ProcessMessage(PCXMessageData pMes)
+{
+	int64 iBeginProcessTime = GetCurrentTimeMS();
+
+	CXGuidObject guidObj(false);
+	string strPacketGUID = guidObj.ConvertGuid(pMes->bodyData.byPacketGuid);
+	if(m_pIOStatHandle!=NULL)
+		m_pIOStatHandle->PushIOStat("queue", strPacketGUID, iBeginProcessTime-pMes->iBeginTime);
+
+	//format the message content
+	MessageToString(pMes);
+
+	CXLog::CXLOG_LEVEL logLevel = CXLog::CXLOG_INFO;
+
+	int    iRet = DispatchMes(pMes);
+
+	int64  iEndTime = GetCurrentTimeMS();
+	int64  iIntervalMillTime = iEndTime - pMes->iBeginTime;
+    uint64 uiIndex = ((CXConnectionObject*)pMes->pConObj)->GetConnectionIndex();
+	char   szInfo[1024] = { 0 };
+	sprintf_s(szInfo, 1024, ",total_time:%lldms,queue_time:%lldms,process_time:%lldms,process_ret:%d", 
+        iIntervalMillTime, iBeginProcessTime -pMes->iBeginTime,
+        iEndTime- iBeginProcessTime, iRet);
+	
+	//m_strLastMessageContent = "";
+	if (iRet != 0)
+	{
+		logLevel = CXLog::CXLOG_ERROR;
+	}
+
+	bool bSlowOps = false;
+	if (iIntervalMillTime > m_dwSlowOpsMS)
+	{
+		m_strLastMessageContent += ",slow_ops";
+		m_strLastMessageContent += szInfo;
+		if (m_pLogHandle != NULL)
+		{
+			m_pLogHandle->Log(logLevel, m_strLastMessageContent.c_str());
+		}
+	}
+	else
+	{
+		m_strLastMessageContent += szInfo;
+	}
+
+	if (m_pJournalLogHandle != NULL)
+	{
+		
+		m_pJournalLogHandle->Log(logLevel, m_strLastMessageContent.c_str());
+	}
+
+	if (m_pIOStatHandle != NULL)
+		m_pIOStatHandle->EndIOStat("total", strPacketGUID, iEndTime);
+	
+	return iRet;
 }
 
 //pszTimeString: if not NULL,will save the time string , the format is: 2019-07-31_15:39:29

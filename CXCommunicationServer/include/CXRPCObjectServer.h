@@ -21,7 +21,11 @@ Description£º
 #include "CXServerStructDefine.h"
 #include "CXCommonPacketStructure.h"
 #include "CXConnectionObject.h"
+#include "CXConnectionSession.h"
+#include "CXGuidObject.h"
+#include "CXLog.h"
 #include <string>
+#include "CXIOStat.h"
 using namespace std;
 namespace CXCommunication
 {
@@ -33,7 +37,10 @@ namespace CXCommunication
 
         virtual string GetObjectName() { return "CXRPCObjectV1"; }
 
-        virtual int ProcessMessage(PCXMessageData pMes) = 0;
+        virtual int ProcessMessage(PCXMessageData pMes);
+
+		//this function will be called by the ProcessMessage function,
+		virtual int DispatchMes(PCXMessageData pMes)=0;
 
         virtual int SendData(CXConnectionObject * pCon, const byte *pbyData, DWORD dwDataLen) = 0;
 
@@ -41,7 +48,7 @@ namespace CXCommunication
 
         virtual void Destroy() = 0;
 
-        virtual void RecordSlowOps(PCXMessageData pMes) = 0;
+        virtual void MessageToString(PCXMessageData pMes) = 0;
 
         string  GetGuid() { return m_strObjectGuid; }
 
@@ -56,6 +63,14 @@ namespace CXCommunication
         //return value : the current time 
         int64   GetCurrentTimeMS(char *pszTimeString = NULL);
 
+		string  GetLastMessageContent() { return m_strLastMessageContent; }
+
+		void    SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
+		void    SetJournalLogHandle(CXLog * handle) { m_pJournalLogHandle = handle; }
+		void    SetSession(CXConnectionSession * pSession) { m_pSession = pSession; }
+		void    SetIOStat(CXIOStat * pHandle) { m_pIOStatHandle = pHandle; }
+		
+
     protected:
         void     GetObjectGuid();
 
@@ -68,6 +83,11 @@ namespace CXCommunication
         //if the process time of a operation is larger than  m_dwSlowOpsSecs milliseconds,
         //this operation is a slow operation ,must record it to log
         DWORD    m_dwSlowOpsMS;
+		string   m_strLastMessageContent;
+		CXLog   *m_pLogHandle;
+		CXLog   *m_pJournalLogHandle;
+		CXConnectionSession*m_pSession;
+		CXIOStat *m_pIOStatHandle;
     };
 }
 #endif // __CXRPCOBJECTSERVER_H__
