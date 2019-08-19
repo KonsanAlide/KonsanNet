@@ -91,7 +91,7 @@ void CXSessionLevelBase::Destroy()
 {
 }
 
-void CXSessionLevelBase::MessageToString(PCXMessageData pMes)
+void CXSessionLevelBase::MessageToString(PCXMessageData pMes, string &strMes)
 {
 	char  szInfo[1024] = { 0 };
 	CXGuidObject guidObj(false);
@@ -99,7 +99,7 @@ void CXSessionLevelBase::MessageToString(PCXMessageData pMes)
 
 	sprintf_s(szInfo, 1024, "session message, packet_guid:%s,message_code:%04d,message length:%d",
 		strPacketGUID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
-	m_strLastMessageContent = szInfo;
+	strMes = szInfo;
 	
 	int iRet = RETURN_SUCCEED;
 	switch (pMes->bodyData.dwMesCode)
@@ -133,7 +133,7 @@ void CXSessionLevelBase::MessageToString(PCXMessageData pMes)
 			sprintf_s(szInfo, 1024, ",session_guid:%s, verification_code:%s",strValue1.c_str(), strValue2.c_str());
 		}
 		
-		m_strLastMessageContent += szInfo;
+		strMes += szInfo;
         break;
 	}
 	case CX_SESSION_LOGOUT_CODE:
@@ -142,7 +142,7 @@ void CXSessionLevelBase::MessageToString(PCXMessageData pMes)
 		break;
 	default:
 	{
-		m_strLastMessageContent += ",unknown packet";
+		strMes += ",unknown packet";
 		break;
 	}
 	}
@@ -255,7 +255,7 @@ int CXSessionLevelBase::SessionLogin(PCXMessageData pMes)
                 char  szInfo[1024] = { 0 };
                 sprintf_s(szInfo, 1024, "Receive a main connection, guid is %s,connection index is %lld,session is %x\n",
                     strGuid.c_str(), pCon->GetConnectionIndex(), pSession);
-                pCon->GetLogHandle()->Log(CXLog::CXLOG_INFO, szInfo);
+                //pCon->GetLogHandle()->Log(CXLog::CXLOG_INFO, szInfo);
             }
             else
             {  
@@ -285,7 +285,7 @@ int CXSessionLevelBase::SessionLogin(PCXMessageData pMes)
                 char  szInfo[1024] = { 0 };
                 sprintf_s(szInfo, 1024, "Receive a data connection, guid is %s,connection index is %lld,session is %x\n",
                     strSessionGuid.c_str(), pCon->GetConnectionIndex(),pSession);
-                pCon->GetLogHandle()->Log(CXLog::CXLOG_INFO, szInfo);
+                //pCon->GetLogHandle()->Log(CXLog::CXLOG_INFO, szInfo);
 
                 //==1 major message connection
                 //==2 minor messsage connection

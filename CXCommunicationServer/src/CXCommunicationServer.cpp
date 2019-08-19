@@ -57,6 +57,7 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
     map<DWORD, DWORD>mapCacheConfig;
     mapCacheConfig[256] = 1024;
     mapCacheConfig[4096] = 1024;
+    mapCacheConfig[524288] = 512;
     int nRet = m_memoryCacheManager.Init(mapCacheConfig);
     if (nRet != 0)
     {
@@ -75,7 +76,7 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
     m_socketServerKernel.SetServer((void*)this);
     m_socketServerKernel.SetLogHandle(m_pLogHandle);
 
-    int iMessageProcessObjInOneQueue =2;
+    int iMessageProcessObjInOneQueue =4;
     int iReadQueueNumber = 4;
     int iRet = m_dataDispathManager.Start(this, iReadQueueNumber);
     if (iRet != RETURN_SUCCEED)
@@ -260,10 +261,12 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
     sprintf_s(szInfo, 1024, "Receive a command to close the connection , connection index is %lld,session is %x,connection is %x\n",
                     conObj.GetConnectionIndex(), pSession,&conObj);
     //m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
-
-    //printf("Prepare to close connection ,connetcion id=%lld,connections=%lld,state:%d,post number=%lld,buffer in list=%lld,buffer in queue=%lld,emClosedType=%d\n",
-    //     conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber(), conObj.GetState(),
-    //    conObj.GetNumberOfPostBuffers(), conObj.GetNumberOfReceivedBufferInList(), conObj.GetNumberOfReceivedPacketInQueue(),emClosedType);
+    /*
+    printf("Prepare to close connection ,connetcion id=%lld,connections=%lld,state:%d,post number=%lld,buffer in list=%lld,buffer in queue=%lld,emClosedType=%d\n",
+         conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber(), conObj.GetState(),
+        conObj.GetNumberOfPostBuffers(), conObj.GetNumberOfReceivedBufferInList(), 
+		conObj.GetNumberOfReceivedPacketInQueue(),emClosedType);
+    */
 
     if (conObj.GetState() == CXConnectionObject::CLOSED)
     {
@@ -303,7 +306,7 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
                 char  szInfo[1024] = { 0 };
                 sprintf_s(szInfo, 1024, "Close a session , guid is %s,connection index is %lld,session is %x,connection is %x\n",
                     pSession->GetSessionGuid().c_str(), conObj.GetConnectionIndex(), pSession,&conObj);
-                m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
+                //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
 
                 m_sessionsManager.CloseSession(pSession);
             }
@@ -356,6 +359,7 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
 		pConObj->SetJournalLogHandle(pComServer->GetJournalLogHandle());
         pConObj->SetIOStat(pComServer->GetIOStatHandle());
 		pConObj->SetRPCObjectManager(pComServer->GetRPCObjectManager());
+		pConObj->SetSocketKernel((void*)&pComServer->GetSocketSeverKernel());
 
 
         //char *str = inet_ntoa(sockRemote.sin_addr);
@@ -435,6 +439,18 @@ int  CXCommunicationServer::OnProcessOnePacket(CXConnectionObject &conObj, PCXMe
         //pHandle->ParseData();
     }
     pQueue->PushMessage((void*)pMes);
+
+    /*
+    int64  iEndTime = conObj.GetCurrentTimeMS();
+    uint64 uiIndex = ((CXConnectionObject*)pMes->pConObj)->GetConnectionIndex();
+    if (iEndTime - pMes->iBeginTime > 1000)
+    {
+        char   szInfo[1024] = { 0 };
+        sprintf_s(szInfo, 1024, ",push_queue_time:%lldms,connetion index:%lld",
+            iEndTime - pMes->iBeginTime, uiIndex);
+        //pComServer->m_pLogHandle->Log(CXLog::CXLOG_WARNNING, szInfo);
+    }
+    */
     return RETURN_SUCCEED;
 }
 

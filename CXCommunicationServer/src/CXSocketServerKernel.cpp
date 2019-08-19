@@ -455,8 +455,11 @@ int  CXSocketServerKernel::WaitThread()
                 int iProcessRet = ProcessEpollEvent(*pConObj, pbyCache, dwCacheLen);
 
             }
-            else if(events[i].events & EPOLLOUT) // 如果有数据发送
+            else if(events[i].events & EPOLLOUT) // the socket is writable
             {
+				//cout << "socke is writable" << endl;
+				pConObj = (CXConnectionObject*)(events[i].data.ptr);
+				int iProcessRet = ProcessEpollEvent(*pConObj, pbyCache, dwCacheLen,false);
             }
 
             if(events[i].events & EPOLLERR || events[i].events & EPOLLHUP)
@@ -590,52 +593,71 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
 
 #ifndef WIN32
 //windows epoll event process
-int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj, byte* pbyThreadCache, DWORD dwCacheLen)
+int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj, byte* pbyThreadCache, DWORD dwCacheLen, bool bRead)
 {
-    int iRet = 0;
-    int nRet = 0;
-    while (nRet >= 0)
-    {
-        DWORD  dwReadLen = 0;
+	if (bRead)
+	{
+		int nRet = 0;
+		while (nRet >= 0)
+		{
+			DWORD  dwReadLen = 0;
 
-        PCXBufferObj pBufObj=NULL;
-        nRet = conObj.RecvData(&pBufObj,dwReadLen);
-        if (dwReadLen>0)
-        {
-            if (m_pfOnRead != NULL)
-            {
-                m_pfOnRead(conObj,pBufObj,dwReadLen, pbyThreadCache, dwCacheLen);
-            }
-            else
-            {
-                OnRead(conObj, pBufObj, dwReadLen, pbyThreadCache, dwCacheLen);
-            }
-        }
+			PCXBufferObj pBufObj = NULL;
+			nRet = conObj.RecvData(&pBufObj, dwReadLen);
+			if (dwReadLen > 0)
+			{
+				if (m_pfOnRead != NULL)
+				{
+					m_pfOnRead(conObj, pBufObj, dwReadLen, pbyThreadCache, dwCacheLen);
+				}
+				else
+				{
+					OnRead(conObj, pBufObj, dwReadLen, pbyThreadCache, dwCacheLen);
+				}
+			}
 
-        // socket had been closed by peer
-        // some error or connection had been closed
-        if (nRet == -3 || nRet == -2)
-        {
-            char szInfo[1024] = {0};
-            sprintf_s(szInfo,1024, "Failed to read data from socket,need to close,connection id=%lld,error code is %d,desc is '%s'\n",
-                          conObj.GetConnectionIndex(),errno,strerror(errno));
-            m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+			// socket had been closed by peer
+			// some error or connection had been closed
+			if (nRet == -3 || nRet == -2)
+			{
+				char szInfo[1024] = { 0 };
+				sprintf_s(szInfo, 1024, "Failed to read data from socket,need to close,connection id=%lld,error code is %d,desc is '%s'\n",
+					conObj.GetConnectionIndex(), errno, strerror(errno));
+				m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
 
-            if (m_pfOnClose != NULL)
-            {
-                m_pfOnClose(conObj, SOCKET_CLOSED);
-            }
-            else
-            {
-                OnClose(conObj, SOCKET_CLOSED);
-            }
-        }
-        else if (nRet == -1)//read to end
-        {
-            break;
-        }
-    }
-    return iRet;
+				if (m_pfOnClose != NULL)
+				{
+					m_pfOnClose(conObj, SOCKET_CLOSED);
+				}
+				else
+				{
+					OnClose(conObj, SOCKET_CLOSED);
+				}
+			}
+			else if (nRet == -1)//read to end
+			{
+				break;
+			}
+		}
+	}
+	else
+	{
+	    conObj.LockSend();
+		if (!SetWaitWritingEvent(conObj, false))
+		{
+		    conObj.UnlockSend();
+			return -4;
+		}
+		int iRet = conObj.SendDataList();
+		if (iRet == -4)
+		{
+		    conObj.UnlockSend();
+			return -5;
+		}
+		conObj.UnlockSend();
+	}
+    
+    return 0;
 }
 
 #endif // Linux
@@ -749,5 +771,34 @@ int  CXSocketServerKernel::DetachConnetionToModel(CXConnectionObject &conObj)
 #endif // WIN32
 
     return 0;
+}
+
+bool  CXSocketServerKernel::SetWaitWritingEvent(CXConnectionObject &conObj, bool bSet)
+{
+#ifdef WIN32
+#else
+	//sprintf("BindConnetionToModel linux\n");
+	//register ev
+	struct epoll_event ev;
+	//ev.events=EPOLLIN |EPOLLOUT | EPOLLET;
+	//ev.events=EPOLLIN;
+	if(bSet)
+		ev.events = EPOLLIN | EPOLLET | EPOLLERR | EPOLLHUP | EPOLLOUT;
+	else
+		ev.events = EPOLLIN | EPOLLET | EPOLLERR | EPOLLHUP;
+	ev.data.ptr = (void*)&conObj;
+	if (-1 == epoll_ctl(m_epollHandle, EPOLL_CTL_MOD, conObj.GetSocket(), &ev))
+	{
+		char szInfo[1024] = { 0 };
+		sprintf_s(szInfo, 1024, "Failed to modify the epoll event,close this connection,connection id=%lld,error code is %d,desc is '%s'\n",
+			conObj.GetConnectionIndex(), errno, strerror(errno));
+		m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+		closesocket(conObj.GetSocket());
+		//cout << "Failed to add the new connection socket to the epoll model" << endl;
+		return false;
+	}
+#endif // WIN32
+
+	return true;
 }
 

@@ -35,9 +35,7 @@ CXRPCObjectServer::CXRPCObjectServer()
     m_dwTimeoutSecs=10;
     //if the process time of a operation is larger than  m_dwSlowOpsSecs senconds,
     //this operation is a slow operation ,must record it to log
-    m_dwSlowOpsMS =1000;
-
-	m_strLastMessageContent = "";
+    m_dwSlowOpsMS =100;
 
 	m_pLogHandle=NULL;
 	m_pJournalLogHandle = NULL;
@@ -70,9 +68,9 @@ int CXRPCObjectServer::ProcessMessage(PCXMessageData pMes)
 	string strPacketGUID = guidObj.ConvertGuid(pMes->bodyData.byPacketGuid);
 	if(m_pIOStatHandle!=NULL)
 		m_pIOStatHandle->PushIOStat("queue", strPacketGUID, iBeginProcessTime-pMes->iBeginTime);
-
+	string strMes = "";
 	//format the message content
-	MessageToString(pMes);
+	MessageToString(pMes, strMes);
 
 	CXLog::CXLOG_LEVEL logLevel = CXLog::CXLOG_INFO;
 
@@ -82,11 +80,10 @@ int CXRPCObjectServer::ProcessMessage(PCXMessageData pMes)
 	int64  iIntervalMillTime = iEndTime - pMes->iBeginTime;
     uint64 uiIndex = ((CXConnectionObject*)pMes->pConObj)->GetConnectionIndex();
 	char   szInfo[1024] = { 0 };
-	sprintf_s(szInfo, 1024, ",total_time:%lldms,queue_time:%lldms,process_time:%lldms,process_ret:%d", 
+	sprintf_s(szInfo, 1024, ",total_time:%lldms,queue_time:%lldms,process_time:%lldms,process_ret:%d,connetion index:%lld", 
         iIntervalMillTime, iBeginProcessTime -pMes->iBeginTime,
-        iEndTime- iBeginProcessTime, iRet);
+        iEndTime- iBeginProcessTime, iRet, uiIndex);
 	
-	//m_strLastMessageContent = "";
 	if (iRet != 0)
 	{
 		logLevel = CXLog::CXLOG_ERROR;
@@ -95,22 +92,21 @@ int CXRPCObjectServer::ProcessMessage(PCXMessageData pMes)
 	bool bSlowOps = false;
 	if (iIntervalMillTime > m_dwSlowOpsMS)
 	{
-		m_strLastMessageContent += ",slow_ops";
-		m_strLastMessageContent += szInfo;
+		strMes += ",slow_ops";
+		strMes += szInfo;
 		if (m_pLogHandle != NULL)
 		{
-			m_pLogHandle->Log(logLevel, m_strLastMessageContent.c_str());
+			m_pLogHandle->Log(logLevel, strMes.c_str());
 		}
 	}
 	else
 	{
-		m_strLastMessageContent += szInfo;
+		strMes += szInfo;
 	}
 
 	if (m_pJournalLogHandle != NULL)
-	{
-		
-		m_pJournalLogHandle->Log(logLevel, m_strLastMessageContent.c_str());
+	{	
+		m_pJournalLogHandle->Log(logLevel, strMes.c_str());
 	}
 
 	if (m_pIOStatHandle != NULL)
@@ -128,10 +124,9 @@ int64 CXRPCObjectServer::GetCurrentTimeMS(char *pszTimeString)
     if (pszTimeString != NULL)
     {
         time_t timeCur = chrono::system_clock::to_time_t(tp);
-        DWORD dwMillsSecond = (DWORD)(timeCur % 1000);
         std::strftime(pszTimeString, 60, "%Y-%m-%d_%H:%M:%S", std::localtime(&timeCur));
         char szMSTime[10] = { 0 };
-        sprintf_s(szMSTime, 10, ".%d", dwMillsSecond);
+        sprintf_s(szMSTime, 10, ".%03d", (int)(tp.time_since_epoch().count() % 1000));
         strcat(pszTimeString, szMSTime);
     }
 

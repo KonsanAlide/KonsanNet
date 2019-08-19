@@ -48,7 +48,7 @@ namespace CXCommunication
 
         virtual void Destroy() = 0;
 
-        virtual void MessageToString(PCXMessageData pMes) = 0;
+        virtual void MessageToString(PCXMessageData pMes,string &strMes) = 0;
 
         string  GetGuid() { return m_strObjectGuid; }
 
@@ -62,8 +62,6 @@ namespace CXCommunication
         //pszTimeString: if not NULL,will save the time string , the format is: 2019-07-31_15:39:29
         //return value : the current time 
         int64   GetCurrentTimeMS(char *pszTimeString = NULL);
-
-		string  GetLastMessageContent() { return m_strLastMessageContent; }
 
 		void    SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
 		void    SetJournalLogHandle(CXLog * handle) { m_pJournalLogHandle = handle; }
@@ -83,7 +81,6 @@ namespace CXCommunication
         //if the process time of a operation is larger than  m_dwSlowOpsSecs milliseconds,
         //this operation is a slow operation ,must record it to log
         DWORD    m_dwSlowOpsMS;
-		string   m_strLastMessageContent;
 		CXLog   *m_pLogHandle;
 		CXLog   *m_pJournalLogHandle;
 		CXConnectionSession*m_pSession;

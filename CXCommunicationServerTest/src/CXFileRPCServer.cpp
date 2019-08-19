@@ -124,7 +124,7 @@ void CXFileRPCServer::Destroy()
     }
 }
 
-void CXFileRPCServer::MessageToString(PCXMessageData pMes)
+void CXFileRPCServer::MessageToString(PCXMessageData pMes, string &strMes)
 {
 	char  szInfo[1024] = { 0 };
 	CXGuidObject guidObj(false);
@@ -132,12 +132,12 @@ void CXFileRPCServer::MessageToString(PCXMessageData pMes)
 
 	sprintf_s(szInfo, 1024, "file message, packet_guid:%s,message_code:%04d,message_length:%d",
 		strPacketGUID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
-	m_strLastMessageContent = szInfo;
+	strMes = szInfo;
 
 	switch (pMes->bodyData.dwMesCode)
 	{
 	case CX_HEAERT_BEAT_CODE:
-		m_strLastMessageContent += ",heart beat message.";
+		strMes += ",op:heart_beat";
 		break;
 	case CX_FILE_OPEN_CODE:
 	{
@@ -150,53 +150,53 @@ void CXFileRPCServer::MessageToString(PCXMessageData pMes)
 		{
 			pData->szFilePath[pData->dwFilePathLen-1]='\0';
 		}
-		sprintf_s(szInfo, 1024, ", open_type:%d,reserve_data:%06x,path_length:%d,file_path:%s",
+		sprintf_s(szInfo, 1024, ",op:open, open_type:%d,reserve:%06x,path_len:%d,path:%s",
 			pData->byOpenType, *((DWORD*)pData->byReserve), pData->dwFilePathLen,pData->szFilePath);
-		m_strLastMessageContent += szInfo;
+		strMes += szInfo;
 		break;
 	}	
 	case CX_FILE_SEEK_CODE:
 	{
 		PCXFileSeek pData = (PCXFileSeek)pMes->bodyData.buf;
-		sprintf_s(szInfo, 1024, ",operation:seek,seek_type:%d,seek_position:%lld",
+		sprintf_s(szInfo, 1024, ",op:seek,seek_type:%d,seek_pos:%lld",
 			pData->dwSeekType, pData->iSeekPos);
-		m_strLastMessageContent += szInfo;
+		strMes += szInfo;
 		break;
 	}
 	case CX_FILE_READ_CODE:
 	{
 		PCXFileRead pData = (PCXFileRead)pMes->bodyData.buf;
-		sprintf_s(szInfo, 1024, ",operation:read,seek_type:%d,seek_position:%lld,need_length:%d",
+		sprintf_s(szInfo, 1024, ",op:read,seek_type:%d,seek_pos:%lld,need_len:%d",
 			pData->dwSeekType, pData->iBeginPos, pData->dwReadLen);
-		m_strLastMessageContent += szInfo;
+		strMes += szInfo;
 		break;
 	}
 	case CX_FILE_WRITE_CODE:
 	{
 		PCXFileWrite pData = (PCXFileWrite)pMes->bodyData.buf;
-		sprintf_s(szInfo, 1024, ",operation:write,seek_type:%d,seek_position:%lld,write_length:%d",
+		sprintf_s(szInfo, 1024, ",op:write,seek_type:%d,seek_pos:%lld,write_len:%d",
 			pData->dwSeekType, pData->iBeginPos, pData->dwDataLen);
-		m_strLastMessageContent += szInfo;
+		strMes += szInfo;
 		break;
 	}
 	case CX_FILE_CLOSE_CODE:
 	{
 		PCXFileClose pData = (PCXFileClose)pMes->bodyData.buf;
-		sprintf_s(szInfo, 1024, ",operation:close,close_type:%d",
+		sprintf_s(szInfo, 1024, ",op:close,close_type:%d",
 			pData->dwType);
-		m_strLastMessageContent += szInfo;
+		strMes += szInfo;
 		break;
 	}
 	case CX_FILE_GET_LENGTH_CODE:
 	{
 		PCXFileClose pData = (PCXFileClose)pMes->bodyData.buf;
-		sprintf_s(szInfo, 1024, ",operation:get file length");
-		m_strLastMessageContent += szInfo;
+		sprintf_s(szInfo, 1024, ",op:get file length");
+		strMes += szInfo;
 		break;
 	}
 	default:
 	{
-		m_strLastMessageContent += ",unknown packet";
+		strMes += ",unknown packet";
 		break;
 	}
 	}

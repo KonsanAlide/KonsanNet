@@ -32,6 +32,7 @@ Description:
 #include "CXPacketCodeDefine.h"
 #include "CXCommunicationServer.h"
 #include "CXRPCObjectManager.h"
+//#include "CXSocketServerKernel.h"
 using namespace std;
 
 //extern CXSpinLock g_lock;
@@ -45,6 +46,7 @@ namespace CXCommunication
 		m_pIOStatHandle = NULL;
 		m_pJournalLogHandle = NULL;
 		m_pRPCObjectManager = NULL;
+		m_pSocketKernel = NULL;
         Reset();
     }
 
@@ -113,6 +115,10 @@ namespace CXCommunication
 
 		// the end of the unpacked message list
 		m_plstMessageEnd=NULL;
+
+		m_uiLastSentPacketSequenceNum = 0;
+
+		m_uiCurSendingPacketSequenceNum = 1;
 
         m_lockRead.Unlock();
     }
@@ -533,7 +539,6 @@ namespace CXCommunication
 
     int CXConnectionObject::PostSend(byte *pData, int iDataLen)
     {
-
         if (pData==NULL || iDataLen <= 0 || iDataLen>1024 * 1024)
             return INVALID_PARAMETER;
 
@@ -553,18 +558,19 @@ namespace CXCommunication
         m_lock.Lock();
 #ifdef WIN32
         DWORD dwSend = 0;
-
+		m_uiNumberOfPostBuffers++;
         if (WSASend(m_sock, &pBufObj->wsaBuf, 1, &dwSend, 0, &pBufObj->ol, NULL) != 0)
         {
             DWORD dwEr = ::WSAGetLastError();
             if (dwEr != WSA_IO_PENDING)
             {
+				m_uiNumberOfPostBuffers--;
                 m_lock.Unlock();
                 FreeCXBufferObj(pBufObj);
                 return -3;
             }
         }
-        //m_uiNumberOfPostBuffers++;
+        //
 
 #endif // WIN32
 
@@ -572,9 +578,9 @@ namespace CXCommunication
         return RETURN_SUCCEED;
     }
 
-    int CXConnectionObject::PostSend(PCXBufferObj pBufObj)
+    int CXConnectionObject::PostSend(PCXBufferObj pBufObj, bool bLockBySelf)
     {
-        if (pBufObj == NULL || pBufObj->wsaBuf.len <= 0 || pBufObj->wsaBuf.len>1024 * 1024)
+        if (pBufObj == NULL || m_pSocketKernel ==NULL || pBufObj->wsaBuf.len <= 0 || pBufObj->wsaBuf.len>1024 * 1024)
             return INVALID_PARAMETER;
 
         if (m_nState == CLOSING || m_nState == CLOSED) //closing or closed
@@ -582,29 +588,25 @@ namespace CXCommunication
             return -4;
         }
 
-        pBufObj->nOperate = OP_WRITE;
+		pBufObj->nOperate = OP_WRITE;
 
-        //m_lock.Lock();
-#ifdef WIN32
-        DWORD dwSend = 0;
 
-        if (WSASend(m_sock, &pBufObj->wsaBuf, 1, &dwSend, 0, &pBufObj->ol, NULL) != 0)
-        {
-            DWORD dwEr = ::WSAGetLastError();
-            if (dwEr != WSA_IO_PENDING)
-            {
-                //m_lock.Unlock();
-                FreeCXBufferObj(pBufObj);
-                return -3;
-            }
-        }
-        //m_uiNumberOfPostBuffers++;
-#else
+		if(bLockBySelf)
+		    m_lockSend.Lock();
 
-#endif // WIN32
+		if (!PushSendBuffer(pBufObj))
+		{
+			if (bLockBySelf)
+				m_lockSend.Unlock();
+			return -2;
+		}
 
-        //m_lock.Unlock();
-        return RETURN_SUCCEED;
+		int iRet = SendDataList();
+
+		if (bLockBySelf)
+			m_lockSend.Unlock();
+
+		return iRet;
     }
 
     int CXConnectionObject::PostSendBlocking(PCXBufferObj pBufObj, DWORD &dwSendLen, bool bLockBySelf)
@@ -674,29 +676,20 @@ namespace CXCommunication
 #ifdef WIN32
         DWORD dwRecv = 0;
         DWORD dwFlag = 0;
-
+		m_uiNumberOfPostBuffers++;
         if (WSARecv(m_sock, &pBufObj->wsaBuf, 1,
             &dwRecv, &dwFlag, &pBufObj->ol, NULL) != 0)
         {
             DWORD dwEr = ::WSAGetLastError();
             if (dwEr != WSA_IO_PENDING)
             {
+				m_uiNumberOfPostBuffers--;
                 m_uiRecvBufferIndex--;
                 m_lockRead.Unlock();
                 FreeCXBufferObj(pBufObj);
                 return -3;
             }
-            else
-            {
-                //m_uiNumberOfPostBuffers++;
-            }
         }
-        else
-        {
-            //m_uiNumberOfPostBuffers++;
-        }
-
-        m_uiNumberOfPostBuffers++;
 
 #endif // WIN32
         m_lockRead.Unlock();
@@ -961,6 +954,7 @@ namespace CXCommunication
         DWORD dwBufferLen = dwPacketLen + sizeof(CXBufferObj) - CX_BUF_SIZE;
         int iPacketBodyLen = dwPacketLen-sizeof(CXPacketHeader);
         PCXBufferObj pBufObj = GetCXBufferObj(dwBufferLen);
+		pBufObj->nSequenceNum = m_uiCurSendingPacketSequenceNum ++;
         byte *pPacketData =(byte *)pBufObj->wsaBuf.buf;
 
         byte *pbyPacketBodyData = pPacketData + sizeof(CXPacketHeader);
@@ -993,8 +987,9 @@ namespace CXCommunication
         pBufObj->wsaBuf.len = dwPacketLen;
 
         DWORD dwSentLen = 0;
-        int iRet = PostSendBlocking(pBufObj, dwSentLen, false);
-        FreeCXBufferObj(pBufObj);
+		int iRet = PostSend(pBufObj,false);
+        //int iRet = PostSendBlocking(pBufObj, dwSentLen, false);
+        //FreeCXBufferObj(pBufObj);
         if (iRet != 0)
         {
             //if (bLockBySelf)
@@ -1054,10 +1049,9 @@ namespace CXCommunication
 		if (pszTimeString != NULL)
 		{
 			time_t timeCur = chrono::system_clock::to_time_t(tp);
-			DWORD dwMillsSecond = (DWORD)(timeCur % 1000);
 			std::strftime(pszTimeString, 60, "%Y-%m-%d_%H:%M:%S", std::localtime(&timeCur));
 			char szMSTime[10] = { 0 };
-			sprintf_s(szMSTime, 10, ".%d", dwMillsSecond);
+			sprintf_s(szMSTime, 10, ".%03d", (int)(tp.time_since_epoch().count() % 1000));
 			strcat(pszTimeString, szMSTime);
 		}
 
@@ -1109,7 +1103,7 @@ namespace CXCommunication
 		PCXMessageData pCurMes = m_plstMessageHead;
 		if (pCurMes == NULL)
 		{
-			UnLock();
+			m_lockSend.Unlock();
 			return iRet;
 		}
 		
@@ -1119,7 +1113,6 @@ namespace CXCommunication
 
 			CXConnectionSession * pSession = (CXConnectionSession*)GetSession();
 			string strObjectGuid = guidObj.ConvertGuid(pMes->bodyData.byObjectGuid);
-
 
 			if (strObjectGuid != "")
 			{
@@ -1190,6 +1183,9 @@ namespace CXCommunication
 				char szInfo[1024] = { 0 };
 				sprintf_s(szInfo, 1024, "Receive a incorrect packet, the object guid is empty\n");
 				m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
+				bNeedClose = true;
+				emClosedType = ERROR_IN_PROCESS;
 			}
 
 			//OutputJournal(pMes,iBeginTime);
@@ -1203,7 +1199,6 @@ namespace CXCommunication
 			if (m_plstMessageHead == NULL)
 			{
 				m_plstMessageEnd = NULL;
-				break;
 			}
 
 			FreeBuffer(pCurMes);
@@ -1315,5 +1310,260 @@ namespace CXCommunication
 		{
 			return false;
 		}
+	}
+
+	//push this buffer to in the sent list, sorted by the sequence number of the buffer
+	bool   CXConnectionObject::PushSendBuffer(PCXBufferObj pBufObj)
+	{
+		if (pBufObj != NULL)
+		{
+			PCXBufferObj pCurBuf = NULL;
+			PCXBufferObj pPrevBuf = NULL;
+
+			pBufObj->pNext = NULL;
+
+			//if the read buffer list is empty, add the current received packet to the end;
+			if (m_pListSendBuf == NULL && m_pListSendBufEnd == NULL)
+			{
+				m_pListSendBuf = m_pListSendBufEnd = pBufObj;
+			}
+			//if the sequence number of the current received packet is larger than the sequence number 
+			//of the last packet in the read list, add the current received packet to the end of the read list;
+			else if (m_pListSendBufEnd != NULL && (m_pListSendBufEnd->nSequenceNum < pBufObj->nSequenceNum))
+			{
+				m_pListSendBufEnd->pNext = pBufObj;
+				m_pListSendBufEnd = pBufObj;
+				if (m_pListSendBuf == NULL)
+				{
+					char szInfo[1024] = { 0 };
+					sprintf_s(szInfo, 1024, "The sent list had an error, the end pointer is not empty, but the header pointer is empty\n");
+					m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+					return false;
+				}
+			}
+			//if the sequence number of the current received packet is less than the sequence number 
+			//of the first packet in the read list, add the current received packet to the header of the read list;
+			else if (m_pListSendBuf != NULL && (m_pListSendBuf->nSequenceNum > pBufObj->nSequenceNum))
+			{
+				pBufObj->pNext = m_pListSendBuf;
+				m_pListSendBuf = pBufObj;
+				if (m_pListSendBufEnd == NULL)
+				{
+					char szInfo[1024] = { 0 };
+					sprintf_s(szInfo, 1024, "The sent list had an error, the header pointer is not empty, but the end pointer is empty\n");
+					m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+					return false;
+				}
+			}
+			else //add the current received packet to the middle of the read list
+			{
+				pCurBuf = m_pListSendBuf->pNext;
+				pPrevBuf = m_pListSendBuf;
+				while (pCurBuf)
+				{
+					if (pCurBuf->nSequenceNum > pBufObj->nSequenceNum)
+					{
+						pPrevBuf->pNext = pBufObj;
+						pBufObj->pNext = pCurBuf;
+						break;
+					}
+					pPrevBuf = pCurBuf;
+					pCurBuf = pCurBuf->pNext;
+				}
+			}
+
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	// send the data in the sending list
+	int CXConnectionObject::SendDataList()
+	{
+		int nRet = 0;
+
+		bool bNeedClose = false;
+		ConnectionClosedType emClosedType = NORMAL;
+		/*
+		bool bLockingBySelf = false;
+
+		
+		if (m_lockSend.GetLockingCount() > 0)
+		{
+			bLockingBySelf = true;
+			m_lockSend.Unlock();
+		}
+		
+
+		m_lockSend.Lock();
+		*/
+
+		PCXBufferObj pCurBuf = m_pListSendBuf;
+		if (pCurBuf == NULL)
+		{
+			//if(!bLockingBySelf)
+			//	m_lockSend.Unlock();
+			return 0;
+		}
+
+		while (pCurBuf->nSequenceNum == (m_uiLastSentPacketSequenceNum + 1))
+		{
+
+#ifdef WIN32
+			DWORD dwSend = 0;
+			m_uiNumberOfPostBuffers++;
+			nRet = -1;
+			if (WSASend(m_sock, &pCurBuf->wsaBuf, 1, &dwSend, 0, &pCurBuf->ol, NULL) != 0)
+			{
+				DWORD dwEr = ::WSAGetLastError();
+				if (dwEr != WSA_IO_PENDING)
+				{
+					bNeedClose = true;
+					emClosedType = SOCKET_CLOSED;
+					nRet = -3;
+					m_uiNumberOfPostBuffers--;
+					//m_uiLastSentPacketSequenceNum++;
+					//break;
+				}
+			}
+#else
+
+			int nWritenLen = 0;
+			int nTotalWritenLen = 0;
+			int nLeftDataLen = pCurBuf->wsaBuf.len;
+			char *pDataBuf = pCurBuf->wsaBuf.buf+ pCurBuf->nCurDataPointer;
+
+			while (nLeftDataLen > 0)
+			{
+				// must comfirm the sockCur is nonblocking.
+				nWritenLen = send(m_sock, pDataBuf + nTotalWritenLen, nLeftDataLen, 0);
+				if (nWritenLen == -1)
+				{
+					if (errno == EAGAIN)// all data had been sent
+					{
+						pCurBuf->nCurDataPointer += nTotalWritenLen;
+						pCurBuf->wsaBuf.len = nLeftDataLen;
+						nRet = -1;
+						break;
+					}
+					else if (errno == ECONNRESET)//receive the RST packet from the peer
+					{
+						//Close();
+						nRet = -2;
+						bNeedClose = true;
+						emClosedType = SOCKET_PEER_CLOSED;
+						break;
+					}
+					else if (errno == EINTR)//interrupt by other event
+					{
+						continue;
+					}
+					else // other error
+					{
+						nRet = -2;
+						bNeedClose = true;
+						emClosedType = SOCKET_OTHER_ERROR;
+						break;
+					}
+				}
+
+				if (nWritenLen == 0)//the peer had closed the socket normally and had sent the FIN packet.
+				{
+					//Close();
+					nRet = -3;
+					bNeedClose = true;
+					emClosedType = SOCKET_PEER_CLOSED;
+					break;
+				}
+
+				nTotalWritenLen += nWritenLen;
+				if (nWritenLen == nLeftDataLen)
+				{
+					break;
+				}
+				nLeftDataLen -= nWritenLen;
+			}
+#endif // WIN32
+			if (nRet != -1)
+			{
+				m_uiLastSentPacketSequenceNum++;
+				m_pListSendBuf = pCurBuf->pNext;
+				if (m_pListSendBuf == NULL)
+				{
+					m_pListSendBufEnd = NULL;
+				}
+
+				FreeCXBufferObj(pCurBuf);
+			}
+			//add the buffer to the list
+			//if appear EAGIN, this function will call by the epollout event again
+			else
+			{
+#ifdef WIN32
+				
+				nRet = 0;
+				m_uiLastSentPacketSequenceNum++;
+				m_pListSendBuf = pCurBuf->pNext;
+				if (m_pListSendBuf == NULL)
+				{
+					m_pListSendBufEnd = NULL;
+				}
+#else
+				CXSocketServerKernel *pKernel = (CXSocketServerKernel*)m_pSocketKernel;
+				if (!pKernel->SetWaitWritingEvent(*this, true))
+				{
+					nRet = -4;
+					break;
+				}
+				nRet = 0;
+				break;
+#endif
+				
+			}
+
+
+			//m_lockSend.Unlock();
+
+			if (bNeedClose)
+			{
+				Lock();
+				CXCommunicationServer *pServer = (CXCommunicationServer *)m_lpServer;
+				pServer->CloseConnection(*this, emClosedType, false);
+				//ProcessConnectionError(this);
+				UnLock();
+			}
+			else
+			{
+				if (GetState() >= CXConnectionObject::CLOSING)//closing
+				{
+					Lock();
+					if (GetState() == CXConnectionObject::CLOSING)//closed
+					{
+						//ProcessConnectionError(pCon);
+						char szInfo[1024] = { 0 };
+						sprintf_s(szInfo, 1024, "Close a closing connection after process a message,connection id=%lld,error code is %d,desc is '%s'\n",
+							GetConnectionIndex(), errno, strerror(errno));
+						//m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+						CXCommunicationServer *pServer = (CXCommunicationServer *)m_lpServer;
+						pServer->CloseConnection(*this, SOCKET_CLOSED, false);
+					}
+					UnLock();
+				}
+			}
+
+			//m_lockSend.Lock();
+
+			pCurBuf = m_pListSendBuf;
+			if (pCurBuf == NULL)
+			{
+				break;
+			}
+		}
+		//if (!bLockingBySelf)
+		//	m_lockSend.Unlock();
+		return nRet;
 	}
 }

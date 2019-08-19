@@ -29,7 +29,7 @@ void CXSessionLoginRPCServer::Destroy()
 {
 }
 
-void CXSessionLoginRPCServer::MessageToString(PCXMessageData pMes)
+void CXSessionLoginRPCServer::MessageToString(PCXMessageData pMes, string &strMes)
 {
 
 }

@@ -76,6 +76,8 @@ namespace CXCommunication
             void SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
             CXLog *GetLogHandle() { return m_pLogHandle; }
 
+			bool  SetWaitWritingEvent(CXConnectionObject &conObj,bool bSet);
+
     public:
             BOOL PostAccept(PCXBufferObj pBufObj);
 #ifdef WIN32
@@ -87,7 +89,7 @@ namespace CXCommunication
                 DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
 #else
             //windows epoll event process
-            int ProcessEpollEvent(CXConnectionObject& conObj, byte* pbyThreadCache, DWORD dwCacheLen);
+            int ProcessEpollEvent(CXConnectionObject& conObj, byte* pbyThreadCache, DWORD dwCacheLen,bool bRead=true);
 #endif
         protected:
 

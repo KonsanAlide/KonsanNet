@@ -76,7 +76,7 @@ int main()
         return -3;
     }
 
-    if (!m_logHandle.Initialize(g_strLocalPath + "server.log",CXLog::CXLOG_DEBUG,true))
+    if (!m_logHandle.Initialize(g_strLocalPath + "server.log",CXLog::CXLOG_DEBUG))
     //if (!m_logHandle.Initialize(g_strLocalPath + "server.log", CXLog::CXLOG_INFO))
     {
         printf("Failed to initialize the log recorder.\n");

@@ -32,6 +32,7 @@ class CXSpinLock
         void Lock();
         void Unlock();
         bool TryLock();
+		int  GetLockingCount() { return m_lLockRefNum; }
     protected:
     private:
         bool m_bInitLocked;
@@ -40,6 +41,7 @@ class CXSpinLock
 #else
 		spinlock m_lock;
 #endif
+		long  m_lLockRefNum;
 		
         
 };

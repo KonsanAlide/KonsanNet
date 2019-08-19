@@ -40,7 +40,7 @@ namespace CXCommunication
 
         virtual void Destroy();
 
-        virtual void MessageToString(PCXMessageData pMes);
+        virtual void MessageToString(PCXMessageData pMes, string &strMes);
 
 
 		int    OpenFile(PCXFileOpenFile pData, DWORD dwDataLen,CXConnectionObject *pCon);

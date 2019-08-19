@@ -15,10 +15,8 @@
 ## description:
    this version had been used in a middle project in my work,I will update it regularly in the future.
 ## Remaining issues:
-*    1.add a send list to the server
-*    2.add a message forwarding logic in the server to let us to forward some data to third party
-*    3.add the timeout process logic in the message processing
-*    4.count the processing time of a message packet, record the slow operations
+*    1.add a message forwarding logic in the server to let us to forward some data to third party
+*    2.add the timeout process logic in the message processing
    
 ## Modified stuff: 
 ### this version modify too many things, show as:  
@@ -35,3 +33,4 @@
 *  11.change the file operation class to a rpc object
 *  12.add a journal log handle to save io records and comsuming times
 *  13.add a packet uuid in the packet structure to use to track positioning errors
+*  14.fix the grave bug that the order of messages is not maintained in processing.

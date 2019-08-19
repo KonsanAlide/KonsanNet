@@ -25,7 +25,8 @@ public:
     CXFileTcpClientTest();
     ~CXFileTcpClientTest();
 
-    int Test(int iNumber);
+    int Download(int iNumber);
+    int Upload(int iNumber);
     bool CompareFile(string strFile1,string strFile2);
 
     bool CompareFile(string strFile1, byte *pFileData, int iDataLen);

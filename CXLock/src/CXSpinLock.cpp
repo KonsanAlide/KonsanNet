@@ -19,30 +19,36 @@ Description£º
 
 CXSpinLock::CXSpinLock(bool bLock)
 {
-    m_bInitLocked = bLock;
+	m_bInitLocked = bLock;
+	m_lLockRefNum = 0;
 	
 #ifdef WIN32
 	InitializeCriticalSection(&m_lock);
+	if (m_bInitLocked)
+	{
+		EnterCriticalSection(&m_lock);
+		m_lLockRefNum = 1;
+	}
 #else
 	m_lock = SPINLOCK_INITIALIZER;
 	if (m_bInitLocked)
 	{
 		spin_lock(&m_lock);
+		m_lLockRefNum = 1;
 	}
 #endif
-
-    
 }
 
 CXSpinLock::~CXSpinLock()
 {
-
     if(m_bInitLocked)
     {
 #ifdef WIN32
 		LeaveCriticalSection(&m_lock);
+		InterlockedDecrement(&m_lLockRefNum);
 #else
 		spin_unlock(&m_lock);
+		__sync_fetch_and_sub(&m_lLockRefNum, 1);
 #endif
  
     }
@@ -60,9 +66,12 @@ void CXSpinLock::Lock()
     }
 #ifdef WIN32
 	EnterCriticalSection(&m_lock);
+	InterlockedIncrement(&m_lLockRefNum);
 #else
 	spin_lock(&m_lock);
+	__sync_fetch_and_add(&m_lLockRefNum, 1);
 #endif
+	
 }
 void CXSpinLock::Unlock()
 {
@@ -72,8 +81,10 @@ void CXSpinLock::Unlock()
     }
 #ifdef WIN32
 	LeaveCriticalSection(&m_lock);
+	InterlockedDecrement(&m_lLockRefNum);
 #else
 	spin_unlock(&m_lock);
+	__sync_fetch_and_sub(&m_lLockRefNum, 1);
 #endif
 }
 
@@ -83,10 +94,12 @@ bool CXSpinLock::TryLock()
 #ifdef WIN32
     if (TryEnterCriticalSection(&m_lock))
     {
+		InterlockedIncrement(&m_lLockRefNum);
         bRet= true;
     }
 #else
     spin_trylock(&m_lock);
+	__sync_fetch_and_add(&m_lLockRefNum, 1);
 #endif
 
     return bRet;

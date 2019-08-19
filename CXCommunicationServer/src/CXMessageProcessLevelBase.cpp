@@ -66,7 +66,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
     CXMessageQueue * pQueue = GetMessageQueue();
     while (IsStart())
     {
-        pQueue->Wait(1000);
+        pQueue->Wait(10);
         //if (pQueue->Wait(1000) == WAIT_OBJECT_0)
         {
             iLoopNum = 0;
@@ -86,128 +86,37 @@ int CXMessageProcessLevelBase::ProcessMessage()
 					return -1;
 				}
 
-				iRet = pCon->ProcessUnpackedMessage(pMes);
-				/*
-				iBeginTimeInProcess = pCon->GetCurrentTimeMS(NULL);
-                iRet = 0;
+                //string strPacketGUID = guidObj.ConvertGuid(pMes->bodyData.byPacketGuid);
+                //int64  iBeginTime = pCon->GetCurrentTimeMS();
+                //pCon->GetIOStat()->PushIOStat("wait_queue", strPacketGUID, iBeginTime - pMes->iBeginTime);
 
-                CXConnectionSession * pSession = (CXConnectionSession *)pCon->GetSession();
-                string strObjectGuid = guidObj.ConvertGuid(pMes->bodyData.byObjectGuid);
-
-                bool bLoginMes = false;
-                int iLoop = 2;
-                while (--iLoop>0)
+                iRet = pCon->ProcessUnpackedMessage(pMes);
+                
+                /*
+                int64  iEndTime = pCon->GetCurrentTimeMS();
+                uint64 uiIndex = ((CXConnectionObject*)pMes->pConObj)->GetConnectionIndex();
+                if (iEndTime - iBeginTime > 30)
                 {
-                    if (strObjectGuid != "")
-                    {
-                        CXRPCObjectServer * pObjectServer = NULL;
-                        if (pSession != NULL)
-                        {
-                            pSession->Lock();
-                            pObjectServer = (CXRPCObjectServer *)pSession->GetData(strObjectGuid, false);
-                        }
-
-                        if (pObjectServer != NULL)
-                        {
-							if (pSession != NULL)
-								pSession->UnLock();
-                        }
-                        else
-                        {
-                            pObjectServer = m_pRPCObjectManager->GetRPCObject(strObjectGuid);
-                            if (pObjectServer != NULL)
-                            {
-								if (!pObjectServer->IsUniqueInstance())
-								{
-									if(pSession!=NULL)
-										pSession->SetData(strObjectGuid, (void*)pObjectServer, false);
-									pObjectServer->SetSession(pSession);
-								}
-								pObjectServer->SetLogHandle(pCon->GetLogHandle());
-								pObjectServer->SetJournalLogHandle(pCon->GetJournalLogHandle());
-								pObjectServer->SetIOStat(pCon->GetIOStat());
-                            }
-                            else //unknown object
-                            {
-								char szInfo[1024] = { 0 };
-								sprintf_s(szInfo, 1024, "Not found the object %s, maybe not registered\n", strObjectGuid.c_str());
-								m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-
-								strObjectGuid = "{0307F567-72FC-4355-8192-9E37DC766D2E}";
-								if (pSession != NULL)
-									pSession->UnLock();
-								continue;
-                                
-                            }
-							if (pSession != NULL)
-								pSession->UnLock();
-                        }
-                        
-
-                        if (pObjectServer != NULL)
-                        {
-                            iRet = pObjectServer->ProcessMessage(pMes);
-                            if (iRet != RETURN_SUCCEED)
-                            {
-                                printf("Process message fails\n");
-                                if (iRet == -2)
-                                {
-                                    pCon->Lock();
-                                    ProcessConnectionError(pCon);
-                                    pCon->UnLock();
-                                }
-                            }
-                        }  
-                    }
-                    else
-                    {
-                        char szInfo[1024] = { 0 };
-                        sprintf_s(szInfo, 1024, "Receive a incorrect packet, the object guid is empty\n");
-                        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                    }
-                    break;
+                    char   szInfo[1024] = { 0 };
+                    sprintf_s(szInfo, 1024, ",process_time:%lldms,connetion index:%lld",
+                        iEndTime - iBeginTime, uiIndex);
+                    m_pLogHandle->Log(CXLog::CXLOG_WARNNING, szInfo);
                 }
 
-				//pCon->OutputJournal(pMes,iBeginTime);
-                pCon->FreeBuffer(pMes);
-
-                //<Process the closing event of this socket>
-                //pCon->Lock();
-                if (pCon->GetState() >= CXConnectionObject::CLOSING)//closing
-                {
-                    pCon->Lock();
-                    pCon->ReduceReceivedPacketNumber();
-                    if (pCon->GetState() == CXConnectionObject::CLOSING)//closed
-                    {
-                        //ProcessConnectionError(pCon);
-                        char szInfo[1024] = {0};
-                        sprintf_s(szInfo,1024, "Close a closing connection after process a message,connection id=%lld,error code is %d,desc is '%s'\n",
-                            pCon->GetConnectionIndex(),errno,strerror(errno));
-                        //m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                        CXCommunicationServer *pServer = (CXCommunicationServer *)pCon->GetServer();
-                        pServer->CloseConnection(*pCon, SOCKET_CLOSED,false);
-                    }
-                    pCon->UnLock();
-                }
-                else
-                {
-                    pCon->ReduceReceivedPacketNumber();
-                }
-				*/
-                //g_lock.Lock();
-                //g_iTotalProcessMessage++;
-                //g_lock.Unlock();
+                //pCon->GetIOStat()->PushIOStat("process", strPacketGUID, iEndTime - iBeginTime);
+                //pCon->FreeBuffer(pMes);
+                */
 
                 pMes = (PCXMessageData)pQueue->GetMessage();
-                /*
+               /*
                 while (pMes==NULL && iLoopNum<1000)
                 {
-                    pMes = (PCXBufferObj)pQueue->GetMessage();
+                    pMes = (PCXMessageData)pQueue->GetMessage();
                     iLoopNum++;
                 }
                 if(pMes)
                     iLoopNum = 0;
-                    */
+                */
             }
         }
     }

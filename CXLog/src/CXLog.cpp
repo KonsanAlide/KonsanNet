@@ -56,10 +56,9 @@ int64 CXLog::GetCurrentTimeMS(char *pszTimeString)
 	if (pszTimeString != NULL)
 	{
 		time_t timeCur = chrono::system_clock::to_time_t(tp);
-		DWORD dwMillsSecond = (DWORD)(timeCur % 1000);
 		std::strftime(pszTimeString, 60, "%Y-%m-%d_%H:%M:%S", std::localtime(&timeCur));
 		char szMSTime[10] = { 0 };
-		sprintf_s(szMSTime, 10, ".%d", dwMillsSecond);
+		sprintf_s(szMSTime, 10, ".%03d", (int)(tp.time_since_epoch().count() % 1000));
 		strcat(pszTimeString, szMSTime);
 	}
 

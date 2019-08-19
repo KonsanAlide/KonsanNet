@@ -65,7 +65,9 @@ namespace CXCommunication
         TIME_OUT,
         ILLEGAL_CONNECTION,
         SOCKET_CLOSED,
-        ERROR_IN_PROCESS
+        ERROR_IN_PROCESS,
+		SOCKET_OTHER_ERROR,
+		SOCKET_PEER_CLOSED
     }ConnectionClosedType;
 
 #endif

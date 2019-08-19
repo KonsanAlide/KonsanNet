@@ -98,7 +98,7 @@ namespace CXCommunication
             void  SetProcessOnePacketFun(POnProcessOnePacket pfn) { m_pfnProcessOnePacket= pfn; }
 
             int PostSend(byte *pData,int iDataLen);
-            int PostSend(PCXBufferObj pBufObj);
+            int PostSend(PCXBufferObj pBufObj, bool bLockBySelf = true);
             int PostSendBlocking(PCXBufferObj pBufObj, DWORD &dwSendLen, bool bLockBySelf = true);
 
             int PostRecv(int iBufSize);
@@ -181,6 +181,18 @@ namespace CXCommunication
 
 			void SetRPCObjectManager(void * handle) { m_pRPCObjectManager = handle; }
 			void *GetRPCObjectManager() { return m_pRPCObjectManager; }
+
+			//push this buffer to in the sent list, sorted by the sequence number of the buffer
+			bool   PushSendBuffer(PCXBufferObj pBufObj);
+
+			void SetSocketKernel(void * handle) { m_pSocketKernel = handle; }
+
+			// send the data in the sending list
+			//return value:==-1 EAGIN error,
+			//             ==-2 some error in sending,
+			//             ==-3 socket had been closed by peer
+			//             ==-4 failed to modify the epoll event for this connection
+			int SendDataList();
 
         protected:
         private:
@@ -288,8 +300,17 @@ namespace CXCommunication
 			// the end of the unpacked message list
 			PCXMessageData m_plstMessageEnd;
 
+			//rpc object manager 
 			void *m_pRPCObjectManager;
 
+			//socket server kernel object
+			void *m_pSocketKernel;
+
+			//the sequence number of the current sending packet
+			uint64 m_uiCurSendingPacketSequenceNum;
+
+			//the sequence number of the last sent packet
+			uint64 m_uiLastSentPacketSequenceNum;
     };
 
 }

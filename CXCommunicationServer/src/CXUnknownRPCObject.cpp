@@ -16,6 +16,7 @@ limitations under the License.
 Description£º
 *****************************************************************************/
 #include "CXUnknownRPCObject.h"
+#include "PlatformFunctionDefine.h"
 using namespace CXCommunication;
 CXUnknownRPCObject::CXUnknownRPCObject()
 {
@@ -50,7 +51,7 @@ void CXUnknownRPCObject::Destroy()
 {
 }
 
-void CXUnknownRPCObject::MessageToString(PCXMessageData pMes)
+void CXUnknownRPCObject::MessageToString(PCXMessageData pMes, string &strMes)
 {
 	char  szInfo[1024] = { 0 };
 	CXGuidObject guidObj(false);
@@ -58,7 +59,7 @@ void CXUnknownRPCObject::MessageToString(PCXMessageData pMes)
 
 	sprintf_s(szInfo, 1024, "unknown object message, packet_guid:%s,message_code:%04d,message length:%d",
 		strPacketGUID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
-	m_strLastMessageContent = szInfo;
+	strMes = szInfo;
 }
 
 

@@ -33,9 +33,17 @@ string g_strLocalPath ="";
 int ThreadReadFileTest(void* pVoid)
 {
     CXFileTcpClientTest test;
-    test.Test((long)pVoid);
+    test.Download((long)pVoid);
     return -1;
 }
+
+int ThreadWriteFileTest(void* pVoid)
+{
+    CXFileTcpClientTest test;
+    test.Upload((long)pVoid);
+    return -1;
+}
+
 
 
 void TestSession()
@@ -132,6 +140,7 @@ void TestConection()
 void *ThreadWork(void *pVoid)
 {
     ThreadReadFileTest(pVoid);
+    //ThreadWriteFileTest(pVoid);
     //TestConection();
     //TestSession();
     return 0;
@@ -178,7 +187,7 @@ int main()
 
     CXThread workThread[1000];
     int k = 0;
-    while (k++<1000)
+    while (k++<10000)
     {
         int i = 0;
         for (i = 0; i < iTestThreadNum; i++)

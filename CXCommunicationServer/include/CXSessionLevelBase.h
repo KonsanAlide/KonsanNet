@@ -39,7 +39,7 @@ namespace CXCommunication
 
         virtual void Destroy();
 
-        virtual void MessageToString(PCXMessageData pMes);
+        virtual void MessageToString(PCXMessageData pMes, string &strMes);
 
     protected:
         virtual int SessionLogin(PCXMessageData pMes);
