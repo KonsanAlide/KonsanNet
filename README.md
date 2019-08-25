@@ -11,9 +11,18 @@
 * Support data encryption and data compression.
 
 
-# version 0.7:
-## description:
+# Version 0.7:
+## Description:
    this version had been used in a middle project in my work,I will update it regularly in the future.
+
+## New features:
+*  1.Add the sending list.
+*  2.Add the compression.
+*  3.Add the encryption.
+*  4.Add RPC model.
+*  5.Add the statistical function on processed time
+*  6.Record the message to track and position the questions in running time
+   
 ## Remaining issues:
 *    1.add a message forwarding logic in the server to let us to forward some data to third party
 *    2.add the timeout process logic in the message processing
