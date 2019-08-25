@@ -21,6 +21,7 @@ Description£º
 #include "CXLog.h"
 #include "..\..\CXFile\include\CXFile64.h"
 #include "PlatformFunctionDefine.h"
+#include "CXFastDataParserHandle.h"
 
 #ifdef WIN32
 #include <fcntl.h>
@@ -80,6 +81,113 @@ int CXFileTcpClientTest::Download(int iNumber)
         return -1;
     }
 
+	CXFastDataParserHandle dataParserHandle;
+
+	string strLocalPath = "";
+#ifdef WIN32
+	char szFilePath[MAX_PATH] = { 0 }, szDrive[MAX_PATH] = { 0 };
+	char szDir[MAX_PATH] = { 0 }, szFileName[MAX_PATH] = { 0 }, szExt[MAX_PATH] = { 0 };
+	GetModuleFileName(NULL, szFilePath, sizeof(szFilePath));
+	_splitpath(szFilePath, szDrive, szDir, szFileName, szExt);
+	strLocalPath = szDrive;
+	strLocalPath.append(szDir);
+#else
+	strLocalPath = "./";
+#endif
+
+    string strPrivKey = "";
+    CXFile64 filePrivKey;
+    if (filePrivKey.Open(strLocalPath + "privateKey.conf", CXFile64::modeRead))
+    {
+        UINT64 iKeyLen = 0;
+        filePrivKey.GetFileLength(iKeyLen);
+        iKeyLen++;
+        char *pszKeyData = new char[iKeyLen];
+        if (pszKeyData != NULL)
+        {
+            memset(pszKeyData, 0, iKeyLen);
+            DWORD dwReadLen = 0;
+            if (filePrivKey.Read((byte*)pszKeyData, iKeyLen, dwReadLen))
+            {
+                strPrivKey = pszKeyData;
+            }
+            delete[]pszKeyData;
+        }
+        filePrivKey.Close();
+    }
+
+	string strPubKey = "";
+	CXFile64 fileKey;
+	if (fileKey.Open(strLocalPath + "pubKey.conf", CXFile64::modeRead))
+	{
+		UINT64 iKeyLen = 0;
+		fileKey.GetFileLength(iKeyLen);
+		iKeyLen++;
+		char *pszKeyData = new char[iKeyLen];
+		if (pszKeyData != NULL)
+		{
+			memset(pszKeyData, 0, iKeyLen);
+			DWORD dwReadLen = 0;
+			if (fileKey.Read((byte*)pszKeyData, iKeyLen, dwReadLen))
+			{
+				strPubKey = pszKeyData;
+			}
+			delete[]pszKeyData;
+		}
+		fileKey.Close();
+	}
+
+
+	byte   m_byKey[128] = { 0 };
+	byte   m_byIv[128] = { 0 };
+	int    m_iKeyLen = 0;
+	int    m_iIvLen = 0;
+
+	CXFile64 file;
+	if (file.Open(strLocalPath + "key.conf", CXFile64::modeRead))
+	{
+		UINT64 iKeyLen = 0;
+		file.GetFileLength(iKeyLen);
+		iKeyLen++;
+		if (iKeyLen < 128)
+		{
+			DWORD dwReadLen = 0;
+			if (file.Read(m_byKey, iKeyLen, dwReadLen))
+			{
+				m_iKeyLen = dwReadLen;
+			}
+		}
+		file.Close();
+	}
+
+	if (file.Open(strLocalPath + "iv.conf", CXFile64::modeRead))
+	{
+		UINT64 iKeyLen = 0;
+		file.GetFileLength(iKeyLen);
+		iKeyLen++;
+		if (iKeyLen < 128)
+		{
+			DWORD dwReadLen = 0;
+			if (file.Read(m_byIv, iKeyLen, dwReadLen))
+			{
+				m_iIvLen = dwReadLen;
+			}
+		}
+		file.Close();
+	}
+
+	dataParserHandle.SetPubKey(strPubKey);
+    dataParserHandle.SetPrivKey(strPrivKey);
+	dataParserHandle.SetBlowfishInfo(m_byKey, m_iKeyLen, m_byIv, m_iIvLen);
+
+	client.SetDataPaserHandle((CXDataParserImpl*)&dataParserHandle);
+	//client.SetEncryptParas(CXDataParserImpl::CXENCRYPT_TYPE_BLOWFISH);
+    client.SetEncryptParas(CXDataParserImpl::CXENCRYPT_TYPE_NONE);
+	//client.SetCompressParas(CXDataParserImpl::CXCOMPRESS_TYPE_SNAPPY);
+    //client.SetCompressParas(CXDataParserImpl::CXCOMPRESS_TYPE_GZIP);
+    //client.SetCompressParas(CXDataParserImpl::CXCOMPRESS_TYPE_ZLIB);
+    client.SetCompressParas(CXDataParserImpl::CXCOMPRESS_TYPE_NONE);
+
     int iRet = client.Open(strRemoteFilePath,CXFileTcpClient::modeRead);
     if(iRet!=0)
     {
@@ -124,8 +232,10 @@ int CXFileTcpClientTest::Download(int iNumber)
         {
             iReadLenInOnce = uiFileLen - uiReadLen;
         }
-
+        uint64 uiBegin = client.GetCurrentTimeMS();
         iRet = client.Read(byFileData, iReadLenInOnce, &iHaveReadLen);
+        uint64 uiEnd = client.GetCurrentTimeMS();
+        uint64 iUsedTime = uiEnd - uiBegin;
         if (iReadLenInOnce != iHaveReadLen)
         {
             printf("Need read %d,only read %d,total read %lld,file is %s\n", iReadLenInOnce, 

@@ -90,6 +90,12 @@ int CXMessageProcessLevelBase::ProcessMessage()
                 //int64  iBeginTime = pCon->GetCurrentTimeMS();
                 //pCon->GetIOStat()->PushIOStat("wait_queue", strPacketGUID, iBeginTime - pMes->iBeginTime);
 
+                char szInfo[1024] = { 0 };
+                uint64 uiSequenceNum = pMes->iSequenceNum;
+                sprintf_s(szInfo, 1024, "Begin to ProcessUnpackedMessage message,SequenceNum:%lld, connection index:%lld,pCurMes:%x\n",
+                    uiSequenceNum, pCon->GetConnectionIndex(), pMes);
+                //m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
+
                 iRet = pCon->ProcessUnpackedMessage(pMes);
                 
                 /*

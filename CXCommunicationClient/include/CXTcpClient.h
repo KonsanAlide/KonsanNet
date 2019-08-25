@@ -42,6 +42,10 @@ namespace CXCommunication
         byte *   m_pbySendBuffer;
         DWORD    m_dwSendBufferLen;
 
+		//using to compress and encrypt data
+		byte *   m_pbyCacheSendBuffer;
+		DWORD    m_dwCacheSendBufferLen;
+
         byte *   m_pbyRealSendBuffer;
         DWORD    m_dwRealSendBufferLen;
 
@@ -50,12 +54,16 @@ namespace CXCommunication
 
         byte *   m_pbyParserBuffer;
         DWORD    m_dwParserBufferLen;
+
+		//using to uncompress and decrypt data
+		byte *   m_pbyCacheRecvBuffer;
+		DWORD    m_dwCacheRecvBufferLen;
         
         CXSocketAddress m_addressRemote;
         CXDataParserImpl *m_pDataParserHandle;
 
-        bool     m_bCompressData;
-        bool     m_bEncryptData;
+		CXDataParserImpl::CXENCRYPT_TYPE  m_encryptType;
+		CXDataParserImpl::CXCOMPRESS_TYPE  m_compressType;
 
         DWORD    m_dwLeftDataBeginPos;
         DWORD    m_dwLeftRecvDataLen;
@@ -114,10 +122,8 @@ namespace CXCommunication
         void SetDataParserHandle(CXDataParserImpl * handle) { m_pDataParserHandle = handle; }
         CXDataParserImpl *GetDataParserHandle() { return m_pDataParserHandle; }
 
-        void SetCompressData(bool bSet) { m_bCompressData = bSet; }
-        void SetEncryptData(bool bSet) { m_bEncryptData = bSet; }
-        bool IsCompressData() { return m_bCompressData; }
-        bool IsEncryptData() { return m_bEncryptData; }
+		void    SetEncryptParas(CXDataParserImpl::CXENCRYPT_TYPE type) { m_encryptType= type; }
+		void    SetCompressParas(CXDataParserImpl::CXCOMPRESS_TYPE type) { m_compressType = type; }
 
 		void SetRPCObjectGuid(const byte *pbyGuid) { memcpy(m_byRPCObjectGuid, pbyGuid, CX_GUID_LEN); }
         void GetRPCObjectGuid(byte *pbyGuid) { memcpy(pbyGuid, m_byRPCObjectGuid, CX_GUID_LEN); }

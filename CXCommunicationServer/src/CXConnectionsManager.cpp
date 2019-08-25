@@ -161,38 +161,6 @@ namespace CXCommunication
         }
     }
 
-    void CXConnectionsManager::RemoveUsingConnection(CXConnectionObject * pObj)
-    {
-        m_lockUsingConnections.Lock();
-        unordered_map<uint64, CXConnectionObject *>::iterator it;
-        it = m_mapUsingConnections.find(pObj->GetConnectionIndex());
-        if (it != m_mapUsingConnections.end())
-        {
-            m_mapUsingConnections.erase(it);
-            m_lockUsingConnections.Unlock();
-        }
-        else
-        {
-            m_lockUsingConnections.Unlock();
-        }
-    }
-
-    void CXConnectionsManager::RemoveUsingConnection(uint64 uiConIndex)
-    {
-        m_lockUsingConnections.Lock();
-        unordered_map<uint64, CXConnectionObject *>::iterator it;
-        it = m_mapUsingConnections.find(uiConIndex);
-        if (it != m_mapUsingConnections.end())
-        {
-            m_mapUsingConnections.erase(it);
-            m_lockUsingConnections.Unlock();
-        }
-        else
-        {
-            m_lockUsingConnections.Unlock();
-        }
-    }
-
     uint64 CXConnectionsManager::GetCurrentConnectionIndex()
     {
         m_lockUsingConnections.Lock();
@@ -377,9 +345,22 @@ namespace CXCommunication
 
     void CXConnectionsManager::ReleaseConnection(CXConnectionObject * pObj)
     {
-        m_lockReleasedConnections.Lock();
-        m_listReleasedConnections.push_back(pObj);
-        m_lockReleasedConnections.Unlock();
+        m_lockUsingConnections.Lock();
+        unordered_map<uint64, CXConnectionObject *>::iterator it;
+        it = m_mapUsingConnections.find(pObj->GetConnectionIndex());
+        if (it != m_mapUsingConnections.end())
+        {
+            m_mapUsingConnections.erase(it);
+            m_lockUsingConnections.Unlock();
+
+            m_lockReleasedConnections.Lock();
+            m_listReleasedConnections.push_back(pObj);
+            m_lockReleasedConnections.Unlock();
+        }
+        else
+        {
+            m_lockUsingConnections.Unlock();
+        }
     }
 
 }

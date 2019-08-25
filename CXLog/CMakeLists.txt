@@ -38,36 +38,36 @@ ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 
 #添加动态库
-ADD_LIBRARY(cxlog SHARED ${DIR_SRCS})
+ADD_LIBRARY(CXLog SHARED ${DIR_SRCS})
 #添加静态库
-ADD_LIBRARY(cxlog_static STATIC ${DIR_SRCS})
+ADD_LIBRARY(CXLog_static STATIC ${DIR_SRCS})
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    TARGET_LINK_LIBRARIES(cxlog CXLock_static.lib)
-    TARGET_LINK_LIBRARIES(cxlog CXEvent_static.lib)
-    TARGET_LINK_LIBRARIES(cxlog CXThread_static.lib)
+    TARGET_LINK_LIBRARIES(CXLog CXLock_static.lib)
+    TARGET_LINK_LIBRARIES(CXLog CXEvent_static.lib)
+    TARGET_LINK_LIBRARIES(CXLog CXThread_static.lib)
 
-    TARGET_LINK_LIBRARIES(cxlog_static CXLock_static.lib)
-    TARGET_LINK_LIBRARIES(cxlog_static CXEvent_static.lib)
-    TARGET_LINK_LIBRARIES(cxlog_static CXThread_static.lib)
+    TARGET_LINK_LIBRARIES(CXLog_static CXLock_static.lib)
+    TARGET_LINK_LIBRARIES(CXLog_static CXEvent_static.lib)
+    TARGET_LINK_LIBRARIES(CXLog_static CXThread_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
-    #TARGET_LINK_LIBRARIES(cxlog libCXLock_static.so)
-    #TARGET_LINK_LIBRARIES(cxlog libCXEvent_static.so)
-    #TARGET_LINK_LIBRARIES(cxlog libCXThread_static.so)
+    #TARGET_LINK_LIBRARIES(CXLog libCXLock_static.so)
+    #TARGET_LINK_LIBRARIES(CXLog libCXEvent_static.so)
+    #TARGET_LINK_LIBRARIES(CXLog libCXThread_static.so)
 
-    TARGET_LINK_LIBRARIES(cxlog libCXLock.so)
-    TARGET_LINK_LIBRARIES(cxlog libCXEvent.so)
-    TARGET_LINK_LIBRARIES(cxlog libCXThread.so)
+    TARGET_LINK_LIBRARIES(CXLog libCXLock.so)
+    TARGET_LINK_LIBRARIES(CXLog libCXEvent.so)
+    TARGET_LINK_LIBRARIES(CXLog libCXThread.so)
 
-    #TARGET_LINK_LIBRARIES(cxlog_static libCXLock_static.a)
-    #TARGET_LINK_LIBRARIES(cxlog_static libCXEvent_static.a)
-    #TARGET_LINK_LIBRARIES(cxlog_static libCXThread_static.a)
+    #TARGET_LINK_LIBRARIES(CXLog_static libCXLock_static.a)
+    #TARGET_LINK_LIBRARIES(CXLog_static libCXEvent_static.a)
+    #TARGET_LINK_LIBRARIES(CXLog_static libCXThread_static.a)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 
 #生成动态库的版本号
-SET_TARGET_PROPERTIES(cxlog PROPERTIES VERSION 1.0 SOVERSION 1)
+SET_TARGET_PROPERTIES(CXLog PROPERTIES VERSION 1.0 SOVERSION 1)
 #将静态库重新命名为hello
 #SET_TARGET_PROPERTIES(CXSpinLock_static PROPERTIES OUTPUT_NAME "hello")
 

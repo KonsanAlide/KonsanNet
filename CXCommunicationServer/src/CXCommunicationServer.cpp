@@ -40,7 +40,7 @@ CXCommunicationServer::CXCommunicationServer()
 
 CXCommunicationServer::~CXCommunicationServer()
 {
-    //dtor
+	Stop();
 }
 
 int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadNum)
@@ -176,12 +176,19 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
     //printf_s("OnRecv1:Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d\n",
     //    dwTransDataOfBytes, (DWORD)pBufObj, pBufObj->nOperate);
 
+    
+
     CXCommunicationServer * pComServer = (CXCommunicationServer*)conObj.GetServer();
     if (pComServer == NULL)
     {
         return -1;
     }
-    pComServer->AddReceivedBuffers();
+
+    char szInfo[1024] = { 0 };
+    uint64 uiIndex = pComServer->AddReceivedBuffers();
+    sprintf_s(szInfo, 1024, "Begin to receive packet,SequenceNum:%lld, connection index:%lld\n",
+        uiIndex, conObj.GetConnectionIndex());
+    //pComServer->m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
 
     //SetFileCompletionNotificationModes
     ConnectionClosedType emClosedType = SOCKET_CLOSED;
@@ -201,6 +208,11 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
         bNeedClose = true;
         emClosedType = ERROR_IN_PROCESS;
     }
+
+    sprintf_s(szInfo, 1024, "End to receive packet,SequenceNum:%lld, connection index:%lld\n",
+        uiIndex, conObj.GetConnectionIndex());
+    //pComServer->m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
+
     if (!bNeedClose)
     {
         if (conObj.GetState() == CXConnectionObject::CLOSING)//closing
@@ -293,8 +305,6 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
         && conObj.GetNumberOfReceivedPacketInQueue() == 0)
     {
         conObj.SetState(CXConnectionObject::CLOSED);
-        m_connectionsManager.RemoveUsingConnection(&conObj);
-
         
         //CXConnectionSession * pSession = (CXConnectionSession *)conObj.GetSession();
         if (pSession != NULL)
@@ -312,19 +322,11 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
             }
             //m_sessionsManager.UnLock();
         }
-
-        bFreeConnection = true;
+        conObj.RecordReleasedTime();
+        m_connectionsManager.ReleaseConnection(&conObj);
     }
     if (bLockBySelf)
         conObj.UnLock();
-    if (bFreeConnection)
-    {
-        conObj.RecordReleasedTime();
-        m_connectionsManager.ReleaseConnection(&conObj);
-        //m_connectionsManager.AddFreeConnectionObj(&conObj);
-        //printf("connection close ,connetcion id=%lld,connections=%lld,ClosedType=%d\n",
-        //    conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber(), emClosedType);
-    }
 
     //g_lock.Lock();
     //g_iTotalProcessCloseNum--;
@@ -360,6 +362,7 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
         pConObj->SetIOStat(pComServer->GetIOStatHandle());
 		pConObj->SetRPCObjectManager(pComServer->GetRPCObjectManager());
 		pConObj->SetSocketKernel((void*)&pComServer->GetSocketSeverKernel());
+		pConObj->SetDataParserHandle(pComServer->GetDataParserHandle());
 
 
         //char *str = inet_ntoa(sockRemote.sin_addr);
@@ -403,13 +406,6 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
     else
     {
         closesocket(sock);
-        if (pConObj!=NULL)
-        {
-            pConObj->Close();
-            pConObj->SetState(CXConnectionObject::CLOSED);
-            ConnectionsManager.AddFreeConnectionObj(pConObj);
-        }
-
         return -2;
     }
 
@@ -454,10 +450,31 @@ int  CXCommunicationServer::OnProcessOnePacket(CXConnectionObject &conObj, PCXMe
     return RETURN_SUCCEED;
 }
 
-void CXCommunicationServer::AddReceivedBuffers()
+uint64 CXCommunicationServer::AddReceivedBuffers()
 {
+    uint64 uiCurBufIndex = 0;
     m_lock.Lock();
     m_uiTotalReceiveBuffers++;
+    uiCurBufIndex = m_uiTotalReceiveBuffers;
     m_lock.Unlock();
+    return uiCurBufIndex;
 }
+
+
+unsigned int CXCommunicationServer::GetCurrentThreadID()
+{
+#ifdef WIN32
+    return::GetCurrentThreadId();
+#else
+    return pthread_self();
+#endif
+}
+
+CXThread *CXCommunicationServer::GetCurrrentThrad()
+{
+    CXThread * pThread = NULL;
+    UINT32 uiThradID = GetCurrentThreadID();
+    return pThread;
+}
+
 

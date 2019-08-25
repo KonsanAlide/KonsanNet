@@ -30,9 +30,12 @@ typedef struct _CX_PACKET_HEADER
 {
     //packet flag: CX_PACKET_HEADER_FLAG
     WORD  wFlag;
-    //compress data,if the first bit is 1, the packet is compressed,the left 7 bit is the compressed type
+    //==0x0  not compress
+	//==0x81 zlib
+	//==0x82 snappy
     byte  byCompressFlag;
-    //encrypt data,if the first bit is 1, the packet is encrypted,the left 7 bit is the encrypted type
+	//==0x0  not encrypt
+	//==0x81 RSA
     byte  byEncryptFlag;
 
     DWORD dwDataLen;

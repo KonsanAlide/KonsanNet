@@ -49,6 +49,13 @@ namespace CXCommunication
 		virtual string GetObjectName() { return "CXRPCObjectV1"; }
         string  GetGuid() { return m_strObjectGuid; }
 
+		void    SetDataPaserHandle(CXDataParserImpl *pHandle);
+		void    SetEncryptParas(CXDataParserImpl::CXENCRYPT_TYPE encryptType);
+		void    SetCompressParas(CXDataParserImpl::CXCOMPRESS_TYPE compressType);
+        //pszTimeString: if not NULL,will save the time string , the format is: 2019-07-31_15:39:29
+        //return value : the current time 
+        int64   GetCurrentTimeMS(char *pszTimeString = NULL);
+
 	protected:
 		void     GetObjectGuid();
 

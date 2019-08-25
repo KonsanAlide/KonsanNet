@@ -211,13 +211,12 @@ void* CXQueueData::PopFront()
         if (m_pListHead->pNext == NULL)
         {
             m_pListHead = m_pListEnd = NULL;
-            --m_dwNumberOfUsingNodes;
-            pData = pNode->pData;
-            FreeNode(pNode);
-            return pData;
         }
-        m_pListHead = pNode->pNext;
-        m_pListHead->pPrev = NULL;
+        else
+        {
+            m_pListHead = pNode->pNext;
+            m_pListHead->pPrev = NULL;
+        }
         pData = pNode->pData;
         --m_dwNumberOfUsingNodes;
         FreeNode(pNode);

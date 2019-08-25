@@ -311,6 +311,9 @@ namespace CXCommunication
 
 			//the sequence number of the last sent packet
 			uint64 m_uiLastSentPacketSequenceNum;
+
+            CXDataParserImpl::CXENCRYPT_TYPE  m_encryptType;
+            CXDataParserImpl::CXCOMPRESS_TYPE  m_compressType;
     };
 
 }

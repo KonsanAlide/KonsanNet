@@ -18,6 +18,7 @@ INCLUDE_DIRECTORIES(
 ../CXLog/include
 ../CXFile/include
 ../CXContainer/include
+../CXDataParser/include
 ./include
 )
 
@@ -65,24 +66,28 @@ ADD_LIBRARY(CXCommunicationServer_static STATIC ${DIR_COMMON_SRCS} ${DIR_SRCS})
 TARGET_LINK_LIBRARIES(CXCommunicationServer ${LIBRARIES})
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
+	TARGET_LINK_LIBRARIES(CXCommunicationServer CXCommon_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationServer CXLock_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationServer CXEvent_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationServer CXSocketWrapper_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationServer CXThread_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationServer CXMemoryCache_static.lib)
-    TARGET_LINK_LIBRARIES(CXCommunicationServer cxlog_static.lib)
-    TARGET_LINK_LIBRARIES(CXCommunicationServer cxfile_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer CXLog_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer CXFile_static.lib)
 	TARGET_LINK_LIBRARIES(CXCommunicationServer CXContainer_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer CXDataParser_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
+	TARGET_LINK_LIBRARIES(CXCommunicationServer libCXCommon.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer libCXLock.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer libCXEvent.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer libCXSocketWrapper.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer libCXThread.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer libCXMemoryCache.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationServer libcxlog.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationServer libcxfile.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer libCXLog.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer libCXFile.so)
 	TARGET_LINK_LIBRARIES(CXCommunicationServer libCXContainer.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer uuid)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer libCXDataParser.so)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 

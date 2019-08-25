@@ -182,7 +182,13 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
 
     memset(pData, 0, CLIENT_BUF_SIZE);
 
+    if (!m_dataClient.SetRecvBufferSize(iWantReadLen+ sizeof(CXFileReadReply) - 1))
+    {
+        return -6;
+    }
+
     DWORD dwMesCode = 0;
+    uint64 uiBegin = GetCurrentTimeMS();
     iTransRet = m_dataClient.RecvPacket(pData, sizeof(CXFileReadReply)-1, iTransDataLen, dwMesCode);
     if (iTransRet != 0 && iTransRet != -8)
     {
@@ -190,6 +196,8 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
         Close();
         return -4;
     }
+    uint64 uiEnd = GetCurrentTimeMS();
+    uint64 iUsedTime = uiEnd - uiBegin;
     if (dwMesCode != CX_FILE_READ_REPLY_CODE)
     {
         DWORD dwEr = GetLastError();

@@ -71,7 +71,7 @@ namespace CXCommunication
 
         CXSessionsManager &  GetSessionsManager() { return m_sessionsManager; }
 
-        void   AddReceivedBuffers();
+        uint64 AddReceivedBuffers();
         uint64 GetTotalReceiveBuffers() { return m_uiTotalReceiveBuffers; }
         uint64 GetTotalConnectionsNumber() { return m_socketServerKernel.GetConnectionsNumber(); }
 
@@ -89,6 +89,9 @@ namespace CXCommunication
         CXIOStat *GetIOStatHandle() { return &m_ioStat; }
 
 		CXRPCObjectManager *GetRPCObjectManager() { return &m_rpcObjectManager; }
+
+        unsigned int GetCurrentThreadID();
+        CXThread *GetCurrrentThrad();
 
     private:
         bool m_bRunning;

@@ -56,7 +56,6 @@ void* ThreadCount(void* lpvoid)
 
 int main()
 {
-
     char szInfo[1024] = { 0 };
 
 #ifdef WIN32
@@ -90,27 +89,107 @@ int main()
 		return -2;
 	}
 
+	string strPrivKey = "";
+	CXFile64 filePrivKey;
+	if (filePrivKey.Open(g_strLocalPath + "privateKey.conf",CXFile64::modeRead))
+	{
+		UINT64 iKeyLen = 0;
+		filePrivKey.GetFileLength(iKeyLen);
+		iKeyLen++;
+		char *pszKeyData = new char[iKeyLen];
+		if (pszKeyData != NULL)
+		{
+			memset(pszKeyData, 0, iKeyLen);
+			DWORD dwReadLen = 0;
+			if (filePrivKey.Read((byte*)pszKeyData, iKeyLen, dwReadLen))
+			{
+				strPrivKey = pszKeyData;
+			}
+			delete[]pszKeyData;
+		}
+		filePrivKey.Close();
+	}
+
+    string strPubKey = "";
+    CXFile64 fileKey;
+    if (fileKey.Open(g_strLocalPath + "pubKey.conf", CXFile64::modeRead))
+    {
+        UINT64 iKeyLen = 0;
+        fileKey.GetFileLength(iKeyLen);
+        iKeyLen++;
+        char *pszKeyData = new char[iKeyLen];
+        if (pszKeyData != NULL)
+        {
+            memset(pszKeyData, 0, iKeyLen);
+            DWORD dwReadLen = 0;
+            if (fileKey.Read((byte*)pszKeyData, iKeyLen, dwReadLen))
+            {
+                strPubKey = pszKeyData;
+            }
+            delete[]pszKeyData;
+        }
+        fileKey.Close();
+    }
+
+	byte   m_byKey[128] = {0};
+	byte   m_byIv[128] = { 0 };
+	int    m_iKeyLen = 0;
+	int    m_iIvLen = 0;
+
+	CXFile64 file;
+	if (file.Open(g_strLocalPath + "key.conf", CXFile64::modeRead))
+	{
+		UINT64 iKeyLen = 0;
+		file.GetFileLength(iKeyLen);
+		iKeyLen++;
+		if (iKeyLen < 128)
+		{
+			DWORD dwReadLen = 0;
+			if (file.Read(m_byKey, iKeyLen, dwReadLen))
+			{
+				m_iKeyLen = dwReadLen;
+			}
+		}
+		file.Close();
+	}
+
+	if (file.Open(g_strLocalPath + "iv.conf", CXFile64::modeRead))
+	{
+		UINT64 iKeyLen = 0;
+		file.GetFileLength(iKeyLen);
+		iKeyLen++;
+		if (iKeyLen < 128)
+		{
+			DWORD dwReadLen = 0;
+			if (file.Read(m_byIv, iKeyLen, dwReadLen))
+			{
+				m_iIvLen = dwReadLen;
+			}
+		}
+		file.Close();
+	}
+
+
 #ifdef WIN32
 	CoInitialize(NULL);
 #endif
 
     
-    CXFastDataParserHandle *pDataParserHandle = NULL;
+	CXFastDataParserHandle dataParserHandle;
+	dataParserHandle.SetPrivKey(strPrivKey);
+    dataParserHandle.SetPubKey(strPubKey);
+	dataParserHandle.SetBlowfishInfo(m_byKey, m_iKeyLen, m_byIv, m_iIvLen);
 
-    CXFileRPCServer *pFileRPCServerObj = new CXFileRPCServer();
-    server.Register(pFileRPCServerObj->GetGuid(),
-        (CXRPCObjectServer*)pFileRPCServerObj);
+    CXFileRPCServer fileRPCServerObj;
+    server.Register(fileRPCServerObj.GetGuid(),(CXRPCObjectServer*)&fileRPCServerObj);
 
-    CXSessionLevelBase *pSessionLoginHandle = new CXSessionLevelBase();
-    server.Register(pSessionLoginHandle->GetGuid(),
-        (CXRPCObjectServer*)pSessionLoginHandle);
+    CXSessionLevelBase sessionLoginHandle;
+    server.Register(sessionLoginHandle.GetGuid(), (CXRPCObjectServer*)&sessionLoginHandle);
 
+	CXUnknownRPCObject unknownObj;
+	server.Register(unknownObj.GetGuid(),(CXRPCObjectServer*)&unknownObj);
 
-	CXUnknownRPCObject *pUnknownObj = new CXUnknownRPCObject();
-	server.Register(pUnknownObj->GetGuid(),
-		(CXRPCObjectServer*)pUnknownObj);
-
-    server.SetDataParserHandle(pDataParserHandle);
+    server.SetDataParserHandle(&dataParserHandle);
     server.SetLogHandle(&m_logHandle);
 	server.SetJournalLogHandle(&m_logJouralHandle);
     int iRet = server.Start(4355, 8);

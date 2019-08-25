@@ -20,13 +20,16 @@ Description£º
 #include "CXFilePacketStructure.h"
 #include "CXPacketCodeDefine.h"
 #include "CXGuidObject.h"
+#include <map>
+#include <chrono>
+#include <ctime>
 
 #ifdef WIN32
 #else
 #include <string.h>
 #endif
 
-
+using namespace std;
 using namespace CXCommunication;
 CXRPCObjectClient::CXRPCObjectClient()
 {
@@ -73,4 +76,38 @@ void CXRPCObjectClient::GetObjectGuid()
 		CXGuidObject guidObject(false);
 		guidObject.ConvertGuid(m_strObjectGuid, m_byObjectGuid);
 	}
+}
+
+void CXRPCObjectClient::SetDataPaserHandle(CXDataParserImpl *pHandle)
+{
+	m_cmmClient.SetDataParserHandle(pHandle);
+	m_dataClient.SetDataParserHandle(pHandle);
+}
+
+void CXRPCObjectClient::SetEncryptParas(CXDataParserImpl::CXENCRYPT_TYPE encryptType)
+{
+	m_cmmClient.SetEncryptParas(encryptType);
+	m_dataClient.SetEncryptParas(encryptType);
+}
+void CXRPCObjectClient::SetCompressParas(CXDataParserImpl::CXCOMPRESS_TYPE compressType)
+{
+	m_cmmClient.SetCompressParas(compressType);
+	m_dataClient.SetCompressParas(compressType);
+}
+//pszTimeString: if not NULL,will save the time string , the format is: 2019-07-31_15:39:29
+int64 CXRPCObjectClient::GetCurrentTimeMS(char *pszTimeString)
+{
+    typedef chrono::time_point<chrono::system_clock, chrono::milliseconds> MsClockType;
+    MsClockType tp = chrono::time_point_cast<chrono::milliseconds>(chrono::system_clock::now());
+
+    if (pszTimeString != NULL)
+    {
+        time_t timeCur = chrono::system_clock::to_time_t(tp);
+        std::strftime(pszTimeString, 60, "%Y-%m-%d_%H:%M:%S", std::localtime(&timeCur));
+        char szMSTime[10] = { 0 };
+        sprintf_s(szMSTime, 10, ".%03d", (int)(tp.time_since_epoch().count() % 1000));
+        strcat(pszTimeString, szMSTime);
+    }
+
+    return (int64)tp.time_since_epoch().count();
 }

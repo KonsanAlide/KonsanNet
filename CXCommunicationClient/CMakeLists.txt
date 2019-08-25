@@ -14,7 +14,9 @@ INCLUDE_DIRECTORIES(
 ../CXLock/include
 ../CXSocketWrapper/include
 ../CXThread/include
+../CXFile/include
 ../CXLog/include
+../CXDataParser/include
 ./include
 )
 
@@ -59,20 +61,24 @@ ADD_LIBRARY(CXCommunicationClient_static STATIC ${DIR_COMMON_SRCS} ${DIR_SRCS})
 
 TARGET_LINK_LIBRARIES(CXCommunicationClient ${LIBRARIES})
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
+	TARGET_LINK_LIBRARIES(CXCommunicationClient CXCommon_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationClient CXLock_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationClient CXEvent_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationClient CXSocketWrapper_static.lib)
     TARGET_LINK_LIBRARIES(CXCommunicationClient CXThread_static.lib)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient cxlog_static.lib)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient cxfile_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationClient CXLog_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationClient CXFile_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationClient CXDataParser_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
+	TARGET_LINK_LIBRARIES(CXCommunicationClient libCXCommon.so)
     TARGET_LINK_LIBRARIES(CXCommunicationClient libCXLock.so)
     TARGET_LINK_LIBRARIES(CXCommunicationClient libCXEvent.so)
     TARGET_LINK_LIBRARIES(CXCommunicationClient libCXSocketWrapper.so)
     TARGET_LINK_LIBRARIES(CXCommunicationClient libCXThread.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient libcxlog.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationClient libcxfile.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationClient libCXLog.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationClient libCXFile.so)
     TARGET_LINK_LIBRARIES(CXCommunicationClient uuid)
+	TARGET_LINK_LIBRARIES(CXCommunicationClient libCXDataParser.so)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 

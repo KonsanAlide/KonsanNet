@@ -64,8 +64,7 @@ namespace CXCommunication
             void AddFreeConnectionObj(CXConnectionObject * pObj);
 
             int  AddUsingConnection(CXConnectionObject * pObj);
-            void RemoveUsingConnection(CXConnectionObject * pObj);
-            void RemoveUsingConnection(uint64 uiConIndex);
+
             uint64 GetCurrentConnectionIndex();
             void Destroy();
             uint64 GetTotalConnectionsNumber();
