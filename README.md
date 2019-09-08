@@ -56,7 +56,7 @@
 *  2.add the hot outer setting, and dynamically adjust the running parameter of the server
    
 ## Modified stuff: 
-### this version modify too many things, show as:  
+### this version modify some things, show as:  
 *  1.fix the bug that mistakenly use the condition in the CXEvent,
 *  2.add a thread cache to reduce the locks
 
