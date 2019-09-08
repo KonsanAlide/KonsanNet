@@ -13,7 +13,10 @@ INCLUDE_DIRECTORIES(
 )
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
- SET(option WIN32)
+ #SET(option WIN32)
+ SET(CMAKE_BUILD_TYPE "Debug")
+ SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+ SET(CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
  #set extern libraries
  SET(LIBRARIES
      #ws2_32.lib
@@ -27,6 +30,9 @@ ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 
 aux_source_directory(./src DIR_SRCS)
+file (GLOB HEADERS "./include/*.h")
+SET(DIR_SRCS ${DIR_SRCS} ${HEADERS})
+source_group("Header Files" FILES ${HEADERS})
 
 SET(LIBRARY_OUTPUT_PATH ../../lib)
 

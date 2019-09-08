@@ -64,7 +64,7 @@ string CXGuidObject::GenerateNewGuid(byte *pbyGuid)
     if (S_OK == ::CoCreateGuid(&guid))
     {
         _snprintf(buf, sizeof(buf)
-            , "{%08X-%04X-%04x-%02X%02X-%02X%02X%02X%02X%02X%02X}"
+            , "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}"
             , guid.Data1
             , guid.Data2
             , guid.Data3

@@ -35,22 +35,25 @@ namespace CXCommunication
 
     CXSocketImpl::CXSocketImpl() : m_sock(INVALID_SOCKET), m_bBlocking(false)
     {
-
+		m_bCloseInDeconstruction = true;
     }
 
     CXSocketImpl::CXSocketImpl(cxsocket sock) : m_sock(sock), m_bBlocking(false)
     {
-
+		m_bCloseInDeconstruction = true;
     }
 
     CXSocketImpl::CXSocketImpl(const CXSocketImpl& iml) : m_sock(iml.m_sock), m_bBlocking(iml.m_bBlocking)
     {
-
+		m_bCloseInDeconstruction = true;
     }
 
     CXSocketImpl::~CXSocketImpl()
     {
-        Close();
+		if (m_bCloseInDeconstruction)
+		{
+			Close();
+		}
     }
 
     int CXSocketImpl::Create(int iFamily /* = AF_INET */, int iSocketType /* = SOCK_STREAM */, int iProto /* = 0 */)

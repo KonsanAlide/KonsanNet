@@ -25,6 +25,7 @@ Description£º
 #ifndef WIN32
 #include <string.h>
 #endif
+#include "CXMemoryCacheManager.h"
 
 namespace CXCommunication
 {
@@ -36,7 +37,7 @@ namespace CXCommunication
         bool     m_bCreated;
         bool     m_bClosing;
         bool     m_bConnected;
-        CXSocketImpl *m_pSocket;
+        CXSocketImpl m_socket;
         int      m_iPacketNumber;
 
         byte *   m_pbySendBuffer;
@@ -69,8 +70,18 @@ namespace CXCommunication
         DWORD    m_dwLeftRecvDataLen;
 
 		byte     m_byRPCObjectGuid[CX_GUID_LEN];
+        byte     m_byRequestID[CX_GUID_LEN];
 
 		CXGuidObject m_guidObj;
+
+		//==true close the socket in the deconstruction function
+		bool     m_bCloseInDeconstruction;
+
+		// the pointer of the memory cache object
+		CXMemoryCacheManager* m_lpCacheObj;
+		bool     m_bUsedMemoryCachePool;
+
+        bool     m_bGetRealObjectID;
 
     public:
 
@@ -88,6 +99,13 @@ namespace CXCommunication
         //                ==-2 socket creation failed
         //                ==-3 socket creation failed, a error accured when allocated memory
         virtual int Create(bool bAccepted = false, cxsocket sock = -1);
+
+		//bind to a local ip address
+		//Received value: ==RETURN_SUCCEED the socket was created successfully 
+		//                ==INVALID_PARAMETER invalid inputed parameters
+		//                ==-2 this socket object had not created
+		//                ==-3 failed to connect the peer 
+		virtual int Bind(const CXSocketAddress& address) { return m_socket.Bind(address); }
 
         //connect to the peer by the ip address
         //Received value: ==RETURN_SUCCEED the socket was created successfully 
@@ -125,8 +143,16 @@ namespace CXCommunication
 		void    SetEncryptParas(CXDataParserImpl::CXENCRYPT_TYPE type) { m_encryptType= type; }
 		void    SetCompressParas(CXDataParserImpl::CXCOMPRESS_TYPE type) { m_compressType = type; }
 
-		void SetRPCObjectGuid(const byte *pbyGuid) { memcpy(m_byRPCObjectGuid, pbyGuid, CX_GUID_LEN); }
-        void GetRPCObjectGuid(byte *pbyGuid) { memcpy(pbyGuid, m_byRPCObjectGuid, CX_GUID_LEN); }
+		void    SetRPCObjectGuid(const byte *pbyGuid) { memcpy(m_byRPCObjectGuid, pbyGuid, CX_GUID_LEN); }
+        void    GetRPCObjectGuid(byte *pbyGuid) { memcpy(pbyGuid, m_byRPCObjectGuid, CX_GUID_LEN); }
+
+		void    SetCloseInDeconstruction(bool bSet);
+		bool    IsCloseInDeconstruction() { return m_bCloseInDeconstruction; }
+
+		void    SetUsedMemoryCachePool(bool bSet,CXMemoryCacheManager* pCacheObj);
+		bool    IsUsedMemoryCachePool() { return m_bUsedMemoryCachePool; }
+
+		cxsocket GetSocket();
     };
 }
 #endif

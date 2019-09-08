@@ -46,7 +46,7 @@ namespace CXCommunication
 		virtual int Close()=0;
         bool        IsOpen() { return m_bIsOpened; }
 
-		virtual string GetObjectName() { return "CXRPCObjectV1"; }
+		virtual string GetObjectClassName() { return "CXRPCObjectV1"; }
         string  GetGuid() { return m_strObjectGuid; }
 
 		void    SetDataPaserHandle(CXDataParserImpl *pHandle);
@@ -56,8 +56,10 @@ namespace CXCommunication
         //return value : the current time 
         int64   GetCurrentTimeMS(char *pszTimeString = NULL);
 
+		void    SetUsedMemoryCachePool(bool bSet, CXMemoryCacheManager* pCacheObj);
+
 	protected:
-		void     GetObjectGuid();
+		void     GetClassGuid();
 
     protected:
         string   m_strRemoteIP;

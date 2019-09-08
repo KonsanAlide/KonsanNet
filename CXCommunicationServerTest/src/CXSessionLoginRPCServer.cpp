@@ -12,7 +12,7 @@ using namespace std;
 CXSessionLoginRPCServer::CXSessionLoginRPCServer()
 {
     m_bIsUniqueInstance = true;
-    GetObjectGuid();
+    GetClassGuid();
 }
 
 
@@ -27,6 +27,7 @@ CXRPCObjectServer* CXSessionLoginRPCServer::CreateObject()
 
 void CXSessionLoginRPCServer::Destroy()
 {
+	Reset();
 }
 
 void CXSessionLoginRPCServer::MessageToString(PCXMessageData pMes, string &strMes)

@@ -21,7 +21,6 @@ Description£º
 #include "CXSocketServerImpl.h"
 #include "SocketDefine.h"
 #include "CXEvent.h"
-#include "CXThread.h"
 #include <list>
 #include "CXLog.h"
 using std::list;
@@ -43,9 +42,9 @@ namespace CXCommunication
             CXThread m_threadListen;
             CXThread m_threadMonitor;
 
-            list<CXThread*>m_lstWaitThreads;
-
             CXLog   *m_pLogHandle;
+
+			CXThreadPool m_threadPool;
 
     public:
             CXSocketServerKernel();
@@ -56,10 +55,11 @@ namespace CXCommunication
             int CreateTcpListenPort(cxsocket & sock, unsigned short usPort, char *pszLocalIP=NULL);
             virtual int Start(unsigned short iListeningPort,int iWaitThreadNum);
             virtual int Stop();
+			virtual CXThread* FindThread(DWORD dwThreadID) { return m_threadPool.FindThread(dwThreadID); }
 
             virtual int OnAccept(void *pServer, cxsocket sock, sockaddr_in &addrRemote);
             virtual int OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-                DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
+                DWORD dwTransDataOfBytes);
             virtual int OnWrite(CXConnectionObject& conObj);
             virtual void OnClose(CXConnectionObject& conObj, ConnectionClosedType emClosedType);
 
@@ -78,18 +78,22 @@ namespace CXCommunication
 
 			bool  SetWaitWritingEvent(CXConnectionObject &conObj,bool bSet);
 
+            //create a tcp socket, connect to the remote peer
+            int   CreateTcpConnection(cxsocket & sock,const string &strRemoteIp, WORD wRemotePort,
+                const string &strLocalIp, WORD wLocalPort, sockaddr_in& addrRemoteOut);
+
     public:
             BOOL PostAccept(PCXBufferObj pBufObj);
 #ifdef WIN32
             //windows iocp event process
             BOOL ProcessIOCPEvent(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-                DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
+                DWORD dwTransDataOfBytes);
 
             BOOL ProcessIocpErrorEvent(CXConnectionObject& conObj, LPOVERLAPPED lpOverlapped,
-                DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
+                DWORD dwTransDataOfBytes);
 #else
             //windows epoll event process
-            int ProcessEpollEvent(CXConnectionObject& conObj, byte* pbyThreadCache, DWORD dwCacheLen,bool bRead=true);
+            int ProcessEpollEvent(CXConnectionObject& conObj, bool bRead=true);
 #endif
         protected:
 

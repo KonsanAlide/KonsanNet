@@ -20,7 +20,7 @@ Description£º
 
 #include "SocketDefine.h"
 #include "CXEvent.h"
-#include "CXThread.h"
+#include "CXThreadPool.h"
 #include "CXSocketServerKernel.h"
 #include "CXConnectionsManager.h"
 #include "CXDataDispathLevelImpl.h"
@@ -35,6 +35,11 @@ Description£º
 #include "CXNetworkInitEnv.h"
 #include "CXRPCObjectManager.h"
 #include "CXIOStat.h"
+#include "CXTaskPool.h"
+#include "CXTaskCreateConnection.h"
+#include "CXTaskParseMessage.h"
+#include "CXTaskPrepareMessage.h"
+#include "CXRPCObjectClientInServer.h"
 using namespace std;
 
 namespace CXCommunication
@@ -51,16 +56,20 @@ namespace CXCommunication
         int Stop();
 
         static int  OnRecv(CXConnectionObject &conObj, PCXBufferObj pBufObj,
-            DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
+            DWORD dwTransDataOfBytes);
 
         static int  OnClose(CXConnectionObject &conObj,ConnectionClosedType emClosedType);
 
         static int  OnAccept(void *pServer, cxsocket sock, sockaddr_in &addrRemote);
+        int         BuildConnection(cxsocket sock, const string &strRemoteIp, 
+                                    WORD wRemotePort, CXConnectionObject **ppConObj,
+			                        bool bProxy=false);
 
         static int  OnWrite(CXConnectionObject &conObj);
 
         //push a message to the message queue
         static int  OnProcessOnePacket(CXConnectionObject &conObj, PCXMessageData pMes);
+
 
         CXSocketServerKernel &GetSocketSeverKernel() { return m_socketServerKernel; }
         CXConnectionsManager &GetConnectionManager() { return m_connectionsManager; }
@@ -91,7 +100,22 @@ namespace CXCommunication
 		CXRPCObjectManager *GetRPCObjectManager() { return &m_rpcObjectManager; }
 
         unsigned int GetCurrentThreadID();
-        CXThread *GetCurrrentThrad();
+        CXThread *GetCurrrentThread();
+
+		byte *GetFirstThreadCache(DWORD dwSize);
+		byte *GetSecondThreadCache(DWORD dwSize);
+
+		CXTaskPool *GetTaskPool() { return &m_taskPool; }
+
+		CXTaskBase *GetCreateConnectionTask();
+
+		//build a proxy connection, if not found a free proxy connection, create it 
+		CXConnectionObject *GetProxyConnection(string strRemoteIp, WORD wRemotePort);
+
+		//the proxy connection have been created, add it to the using map and communication model
+		int         OnProxyConnectionCreated(CXConnectionObject *pCon);
+
+        void        DetachProxyConnection(CXRPCObjectClientInServer *pObj);
 
     private:
         bool m_bRunning;
@@ -117,6 +141,23 @@ namespace CXCommunication
         CXRPCObjectManager    m_rpcObjectManager;
 
 		CXIOStat m_ioStat;
+
+		CXThreadPool    m_threadPoolDispatch;
+        //the task pool used to run time-consuming tasks 
+		CXTaskPool      m_taskPool;
+        //the size of the the task pool used to run time-consuming tasks 
+        DWORD           m_dwTaskPoolSize;
+		DWORD           m_dwInitTaskQueueSize;
+
+		//use task pool to parse the received packet, uncompress and decrypt it asynchronously
+		bool            m_bAsyncParseData;
+
+		//use task pool to process the data needed to send, compress and encrypt it asynchronously
+		bool            m_bAsyncPrepareData;
+
+		CXTaskCreateConnection m_taskCreateConnectionBase;
+		CXTaskParseMessage     m_taskParseMessageBase;
+		CXTaskPrepareMessage   m_taskPrepareMessageBase;
     };
 }
 

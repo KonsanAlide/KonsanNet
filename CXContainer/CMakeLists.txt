@@ -10,10 +10,17 @@ INCLUDE_DIRECTORIES(
  ./include
 )
 
-aux_source_directory(src DIR_SRCS)
+aux_source_directory(./src DIR_SRCS)
+file (GLOB HEADERS "./include/*.h")
+SET(DIR_SRCS ${DIR_SRCS} ${HEADERS})
+source_group("Header Files" FILES ${HEADERS})
 
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
+    #SET(option WIN32)
+    SET(CMAKE_BUILD_TYPE "Debug")
+    SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+    SET(CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
     LINK_DIRECTORIES(../../lib/debug)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     LINK_DIRECTORIES(../../lib)
@@ -30,12 +37,17 @@ SET(LIBRARY_OUTPUT_PATH ../../lib)
 #add_executable(CXContainer ${DIR_SRCS} main.cpp )
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    TARGET_LINK_LIBRARIES(CXContainer CXLock_static.lib)
+    TARGET_LINK_LIBRARIES(CXContainer CXCommon_static.lib)
+	TARGET_LINK_LIBRARIES(CXContainer CXLock_static.lib)
+	
+	TARGET_LINK_LIBRARIES(CXContainer_static CXCommon_static.lib)
     TARGET_LINK_LIBRARIES(CXContainer_static CXLock_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     LINK_DIRECTORIES(../../lib)
-    TARGET_LINK_LIBRARIES(CXContainer libCXLock.so)
-    TARGET_LINK_LIBRARIES(CXContainer_static libCXLock_static.a)
+    TARGET_LINK_LIBRARIES(CXContainer        libCXCommon.so)
+	TARGET_LINK_LIBRARIES(CXContainer        libCXLock.so)
+    TARGET_LINK_LIBRARIES(CXContainer_static        libCXCommon_static.a)
+	TARGET_LINK_LIBRARIES(CXContainer_static        libCXLock_static.a)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 

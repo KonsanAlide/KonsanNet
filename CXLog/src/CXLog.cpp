@@ -6,7 +6,7 @@ using namespace std;
 #include <sstream>
 #include "PlatformFunctionDefine.h"
 
-void* ThreadLog(void* lpvoid);
+DWORD ThreadLog(void* lpvoid);
 CXLog::CXLog()
 {
     m_strFilePath = "";
@@ -29,20 +29,21 @@ bool CXLog::Initialize(string strFilePath, CXLOG_LEVEL bOutputLevel, bool bDirec
     if (strFilePath.length()<=0)
         return false;
 
+    m_bRunning = true;
+    m_strFilePath = strFilePath;
+    m_bOutputLevel = bOutputLevel;
     m_bDirectWrite = bDirectWrite;
     if (!m_bDirectWrite)
     {
         int iRet = m_threadLog.Start(ThreadLog, this);
         if (iRet != 0)
         {
+            m_bRunning = false;
             return false;
         }
     }
 
     
-    m_bRunning = true;
-    m_strFilePath = strFilePath;
-    m_bOutputLevel = bOutputLevel;
 
     return true;
 }
@@ -183,8 +184,8 @@ int  CXLog::Run()
     return 0;
 }
 
-void* ThreadLog(void* lpvoid)
+DWORD ThreadLog(void* lpvoid)
 {
     CXLog * pServer = (CXLog*)lpvoid;
-    return (void*)pServer->Run();
+    return pServer->Run();
 }

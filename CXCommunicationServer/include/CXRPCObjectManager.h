@@ -1,5 +1,5 @@
 /****************************************************************************
-Copyright (c) 2018 Charles Yang
+Copyright (c) 2018-2019 Charles Yang
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ using namespace std;
 #endif
 
 #include "CXSpinLock.h"
-#include <queue>
+#include <list>
 
 using namespace std;
 
@@ -52,14 +52,42 @@ namespace CXCommunication
         CXRPCObjectManager();
         virtual ~CXRPCObjectManager();
 
-        void Register(const string &strObjectGuid, CXRPCObjectServer *pObj);
-        CXRPCObjectServer * GetRPCObject(const string &strObjectGuid);
+		//register a class of object to the generator
+		//strObjectClassGuid: the object's class guid 
+        void Register(const string &strObjectClassGuid, CXRPCObjectServer *pObj);
+
+		//get a free RPC object according to the object's class guid 
+        CXRPCObjectServer * GetFreeObject(const string &strObjectClassGuid);
+
+		//get the static rpc object, this object cann't delete or attach to the session,
+		//only use to convern the message to string
+		CXRPCObjectServer * GetStaticObject(const string &strObjectClassGuid);
+
+		// free a object to the free pool
+		void                FreeObject(CXRPCObjectServer * pObj); 
+
+
+		CXRPCObjectServer * FindUsingObject(const string &strObjectID);
+
         void Lock();
         void UnLock();
+
+		void TravelTimeoutRequest();
 
     protected:
     private:
         unordered_map<string, CXRPCObjectServer *> m_mapRegisterObject;
+
+		//key: the class guid of the object
+		unordered_map<string, list<CXRPCObjectServer *>> m_mapFreeObjs;
+
+		//key: the guid of the object
+		//value: the list of the objects in this session
+		unordered_map<string, CXRPCObjectServer *> m_mapUsingObjs;
+
+		uint64 m_uiUsingObjects;
+		uint64 m_uiFreeObjects;
+
         CXSpinLock m_lock;
     };
 }

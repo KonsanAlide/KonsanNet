@@ -33,8 +33,8 @@ Description:
 
 using namespace CXCommunication;
 
-void* ThreadListen(void* lpvoid);
-void* ThreadWork(void* lpvoid);
+DWORD ThreadListen(void* lpvoid);
+DWORD ThreadWork(void* lpvoid);
 
 CXSocketServerKernel::CXSocketServerKernel()
 {
@@ -42,6 +42,9 @@ CXSocketServerKernel::CXSocketServerKernel()
     m_nListeningPort=4355;
     m_sockListen = 0;
     m_epollHandle = 0;
+#ifdef WIN32
+    m_iocpHandle = NULL;
+#endif
     m_uiConnectionNumber = 0;
 }
 
@@ -73,11 +76,13 @@ int CXSocketServerKernel::CreateTcpListenPort(cxsocket & sock,
         sockLocal.sin_addr.s_addr = inet_addr(pszLocalIP);
     }
 
-
+	char szInfo[1024] = { 0 };
     sock = socket(PF_INET, SOCK_STREAM, 0);
     if (sock == -1)
     {
-        cout << "Failed to creat listen socket" << endl;
+		DWORD dwError = GetLastError();
+		sprintf_s(szInfo, 1024, "Failed to creat listen socket\n");
+		m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
         return -2;
     }
     #ifndef WIN32
@@ -93,7 +98,15 @@ int CXSocketServerKernel::CreateTcpListenPort(cxsocket & sock,
     int nRet = bind(sock, (sockaddr*)&sockLocal, nAddrLen);
     if (nRet == -1)
     {
-        cout << "Failed to bind the listen socket to the local address" << endl;
+		DWORD dwError = GetLastError();
+		string strIP = "";
+		if (pszLocalIP != NULL)
+		{
+			strIP = pszLocalIP;
+		}
+		sprintf_s(szInfo, 1024, "Failed to bind the listen socket to ip:port=%s:%d,error code is %d, description is %s\n", 
+			strIP.c_str(),usPort, dwError, strerror(errno));
+		m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
         closesocket(sock);
         return -3;
     }
@@ -108,12 +121,21 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
         return INVALID_PARAMETER;
     }
 
+	if (!m_threadPool.CreatePool(iWaitThreadNum*2))
+	{
+		return -10;
+	}
+
+	char szInfo[1024] = { 0 };
 
 #ifdef WIN32
     m_iocpHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
     if (NULL == m_iocpHandle)
     {
-        cout << "Failed to iocp handle " << endl;
+		DWORD dwError = GetLastError();
+		sprintf_s(szInfo, 1024, "Failed to create iocp handle,error code is %d\n",dwError);
+		m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
         return -4;
     }
 
@@ -123,7 +145,9 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
     m_epollHandle = epoll_create(256);
     if (m_epollHandle == -1)
     {
-        cout << "Failed to create epoll " << endl;
+		DWORD dwError = GetLastError();
+		sprintf_s(szInfo, 1024, "Failed to create epoll handle,error code is %d\n", dwError);
+		m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
         return -4;
     }
 
@@ -132,7 +156,6 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
     int iRet = CreateTcpListenPort(m_sockListen, iListeningPort);
     if (iRet != 0)
     {
-        printf("Failed to creat listen socket\n");
 #ifdef WIN32
         CloseHandle(m_iocpHandle);
 #else
@@ -157,55 +180,71 @@ int CXSocketServerKernel::Start(unsigned short iListeningPort,int iWaitThreadNum
 
     SetStarted(true);
 
+	DWORD dwThreadCacheSize = CX_MAX_CHACHE_SIZE*2;
     bool bCreateThread = true;
     for(int i=0;i<m_iWaitThreadNum;i++)
     {
-        CXThread *pWaitThread = NULL;
-        try
-        {
-            pWaitThread = new CXThread();
-        }
-        catch (const bad_alloc& e)
-        {
-            bCreateThread = false;
-            printf("Failed to start socket server kernel, allocate memory failed \n");
-            pWaitThread = NULL;
-        }
-
+        CXThread *pWaitThread = m_threadPool.GetFreeThread();
         if (pWaitThread != NULL)
         {
-            RunFun funThread = &ThreadWork;
-            iRet = pWaitThread->Start(funThread, (void*)this);
-            if (iRet != 0)
-            {
-                printf("Failed to start socket server kernel, create waitting thread fails \n");
-                bCreateThread = false;
-            }
+			if (!pWaitThread->AllocateFirstCache(dwThreadCacheSize))
+			{
+				DWORD dwError = GetLastError();
+				sprintf_s(szInfo, 1024, "Failed to allocate %d bytes thread cache for the work thread,error code is %d\n", dwThreadCacheSize, dwError);
+				m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+				bCreateThread = false;
+			}
+
+			if (bCreateThread && !pWaitThread->AllocateSecondCache(dwThreadCacheSize))
+			{
+				DWORD dwError = GetLastError();
+				sprintf_s(szInfo, 1024, "Failed to allocate %d bytes thread cache for the work thread,error code is %d\n", dwThreadCacheSize, dwError);
+				m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+				bCreateThread = false;
+			}
+
+			if (bCreateThread)
+			{
+				iRet = pWaitThread->Start(&ThreadWork, (void*)this);
+				if (iRet != 0)
+				{
+					sprintf_s(szInfo, 1024, "Failed to start the work thread of the server kernel\n");
+					m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+					bCreateThread = false;
+				}
+			}
         }
         if (!bCreateThread)
         {
             Stop();
             return -9;
         }
-        m_lstWaitThreads.push_back(pWaitThread);
     }
 
     iRet = listen(m_sockListen, SOMAXCONN);
     if (iRet == -1)
     {
-        cout << "Failed to listen the socket, error : "<< strerror(errno) << endl;
+		DWORD dwError = GetLastError();
+		sprintf_s(szInfo, 1024, "Failed to listen the port %d,error code is %d, description is %s\n",
+			iListeningPort,dwError, strerror(errno));
+		m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
         Stop();
         return -10;
     }
 
-    iRet = m_threadListen.Start(&ThreadListen, (void*)this);
-    if (iRet != 0)
-    {
-        cout<< "CUserManagement pthread_create fails"<<endl;
-        Stop();
-
-        return -7;
-    }
+	CXThread *pThread = m_threadPool.GetFreeThread();
+	if (pThread != NULL)
+	{
+		iRet = pThread->Start(&ThreadListen, (void*)this);
+		if (iRet != 0)
+		{
+			DWORD dwError = GetLastError();
+			sprintf_s(szInfo, 1024, "Failed to start listen thread of the server kernel\n");
+			m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+			Stop();
+			return -7;
+		}
+	}
 
     return RETURN_SUCCEED;
 }
@@ -215,32 +254,25 @@ int CXSocketServerKernel::Stop()
     SetStarted(false);
     closesocket(m_sockListen);
 
-    CXThread * pThreadObj = NULL;
-    std::list<CXThread*>::iterator it = m_lstWaitThreads.begin();
-    for (; it != m_lstWaitThreads.end(); it++)
+    for (int i=0; i<= m_iWaitThreadNum; i++)
     {
 #ifdef WIN32
-        PostQueuedCompletionStatus(m_iocpHandle, (DWORD)0xFFFFFFFF, NULL, NULL);
+        if (m_iocpHandle != NULL)
+            PostQueuedCompletionStatus(m_iocpHandle, (DWORD)0xFFFFFFFF, NULL, NULL);
 #else
 #endif
     }
 
-    it = m_lstWaitThreads.begin();
-    for (; it != m_lstWaitThreads.end();)
-    {
-        pThreadObj = *it;
-        pThreadObj->Wait();
-        m_lstWaitThreads.pop_front();
-        it = m_lstWaitThreads.begin();
-        delete[] pThreadObj;
-    }
+	m_threadPool.Destroy();
 
     m_threadListen.Wait();
 
 #ifdef WIN32
-    CloseHandle(m_iocpHandle);
+    if(m_iocpHandle!=NULL)
+        CloseHandle(m_iocpHandle);
 #else
-    close(m_epollHandle);
+    if (m_epollHandle != 0)
+        close(m_epollHandle);
 #endif
 
 
@@ -253,7 +285,7 @@ int CXSocketServerKernel::OnAccept(void *pServer, cxsocket sock, sockaddr_in &ad
 }
 
 int CXSocketServerKernel::OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-    DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen)
+    DWORD dwTransDataOfBytes)
 {
     return RETURN_SUCCEED;
 }
@@ -283,20 +315,18 @@ bool CXSocketServerKernel::SetNonblocking(int sock)
     opts = fcntl(sock, F_GETFL);
     if (opts<0)
     {
-        perror("fcntl(sock,GETFL)");
         return false;
     }
     opts = opts | O_NONBLOCK;
     if (fcntl(sock, F_SETFL, opts)<0)
     {
-        perror("fcntl(sock,SETFL,opts)");
         return false;
     }
 #endif //WIN32
     return true;
 }
 
-void* ThreadListen(void* lpvoid)
+DWORD ThreadListen(void* lpvoid)
 {
     CXSocketServerKernel* pServer = (CXSocketServerKernel*)lpvoid;
     pServer->ListenThread();
@@ -304,7 +334,7 @@ void* ThreadListen(void* lpvoid)
     //return NULL;
 }
 
-void* ThreadWork(void* lpvoid)
+DWORD ThreadWork(void* lpvoid)
 {
     CXSocketServerKernel* pServer = (CXSocketServerKernel*)lpvoid;
     pServer->WaitThread();
@@ -370,23 +400,6 @@ int  CXSocketServerKernel::WaitThread()
 
     PCXBufferObj pBufObj = NULL;
 
-	byte *pbyCache = NULL;
-	DWORD dwCacheLen = CX_MAX_CHACHE_SIZE;
-
-	try
-	{
-		pbyCache = new byte[dwCacheLen];
-		if (pbyCache == NULL)
-		{
-			return -4;
-		}
-	}
-	catch (const bad_alloc& e)
-	{
-		return -4;
-	}
-
-
 #ifdef WIN32
     void * lpCompletionKey = NULL;
     LPOVERLAPPED lpOverlapped = NULL;
@@ -408,7 +421,7 @@ int  CXSocketServerKernel::WaitThread()
 
         if (!bGetStauts)
         {
-            if (!ProcessIocpErrorEvent(*pConObj,lpOverlapped, dwNumberOfBytes,pbyCache,dwCacheLen))
+            if (!ProcessIocpErrorEvent(*pConObj,lpOverlapped, dwNumberOfBytes))
             {
                 return -2;
             }
@@ -420,7 +433,7 @@ int  CXSocketServerKernel::WaitThread()
 
             if (dwNumberOfBytes == 0 && (pBufObj->wsaBuf.len!=0))
             {
-                if (!ProcessIocpErrorEvent(*pConObj, lpOverlapped, dwNumberOfBytes, pbyCache, dwCacheLen))
+                if (!ProcessIocpErrorEvent(*pConObj, lpOverlapped, dwNumberOfBytes))
                 {
                     return -2;
                 }
@@ -430,7 +443,7 @@ int  CXSocketServerKernel::WaitThread()
             //sprintf_s(szInfo,1024, "Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x\n", dwNumberOfBytes, (DWORD)pBufObj);
             //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
             //printf_s(szInfo);
-            if (!ProcessIOCPEvent(*pConObj, pBufObj, dwNumberOfBytes, pbyCache, dwCacheLen))
+            if (!ProcessIOCPEvent(*pConObj, pBufObj, dwNumberOfBytes))
             {
                 return -3;
             }
@@ -452,14 +465,14 @@ int  CXSocketServerKernel::WaitThread()
             {
                 //cout << "A Data Packet received" << endl;
                 pConObj = (CXConnectionObject*)(events[i].data.ptr);
-                int iProcessRet = ProcessEpollEvent(*pConObj, pbyCache, dwCacheLen);
+                int iProcessRet = ProcessEpollEvent(*pConObj);
 
             }
             else if(events[i].events & EPOLLOUT) // the socket is writable
             {
 				//cout << "socke is writable" << endl;
 				pConObj = (CXConnectionObject*)(events[i].data.ptr);
-				int iProcessRet = ProcessEpollEvent(*pConObj, pbyCache, dwCacheLen,false);
+				int iProcessRet = ProcessEpollEvent(*pConObj,false);
             }
 
             if(events[i].events & EPOLLERR || events[i].events & EPOLLHUP)
@@ -491,7 +504,7 @@ int  CXSocketServerKernel::WaitThread()
 
 #ifdef WIN32
 BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LPOVERLAPPED lpOverlapped,
-	DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen)
+	DWORD dwTransDataOfBytes)
 {
     DWORD dwErrorCode = GetLastError();
     //printf_s("GetQueuedCompletionStatus failed,error code= %d,dwTransDataOfBytes=%d\n", dwErrorCode, dwTransDataOfBytes);
@@ -520,7 +533,14 @@ BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LP
         {
             if (pBufObj != NULL)
             {
-                conObj.ReduceNumberOfPostBuffers();
+                if (pBufObj->nOperate == OP_WRITE)
+                {
+                    conObj.ReduceNumberOfPostedSentBuffers();
+                }
+                else
+                {
+                    conObj.ReduceNumberOfPostedRecvBuffers();
+                }
                 conObj.FreeCXBufferObj(pBufObj);
             }
             //conObj.SetState(3);
@@ -546,7 +566,7 @@ BOOL  CXSocketServerKernel::ProcessIocpErrorEvent(CXConnectionObject &conObj, LP
 
 //windows iocp event process
 BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-	DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen)
+	DWORD dwTransDataOfBytes)
 {
     char szInfo[1024] = { 0 };
     //sprintf_s(szInfo, 1024, "ProcessIOCPEvent:Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d,pBufObj->nSequenceNum=%I64i\n",
@@ -561,11 +581,11 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
         pBufObj->wsaBuf.len = dwTransDataOfBytes;
         if (m_pfOnRead != NULL)
         {
-            m_pfOnRead(conObj, pBufObj, dwTransDataOfBytes, pbyThreadCache,dwCacheLen);
+            m_pfOnRead(conObj, pBufObj, dwTransDataOfBytes);
         }
         else
         {
-            OnRead(conObj, pBufObj, dwTransDataOfBytes, pbyThreadCache, dwCacheLen);
+            OnRead(conObj, pBufObj, dwTransDataOfBytes);
         }
 
         return TRUE;
@@ -573,17 +593,17 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
     else if (pBufObj->nOperate == OP_WRITE)
     {
         conObj.FreeCXBufferObj(pBufObj);
-        conObj.ReduceNumberOfPostBuffers();
+        conObj.ReduceNumberOfPostedSentBuffers();
         return TRUE;
     }
     else
     {
-        sprintf_s(szInfo, 1024, "Error Packet : receive a error packet, pBufObj = %x, pBufObj->nOperate = %d, pBufObj->nSequenceNum = %I64i, free buffer\n",
+        sprintf_s(szInfo, 1024, "Error Packet : receive an wrong packet, pBufObj = %x, pBufObj->nOperate = %d, pBufObj->nSequenceNum = %I64i, free buffer\n",
             (void*)pBufObj, pBufObj->nOperate, pBufObj->nSequenceNum);
         m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
         printf_s(szInfo);
         conObj.FreeCXBufferObj(pBufObj);
-        conObj.ReduceNumberOfPostBuffers();
+        conObj.ReduceNumberOfPostedRecvBuffers();
     }
 
 
@@ -593,7 +613,7 @@ BOOL CXSocketServerKernel::ProcessIOCPEvent(CXConnectionObject& conObj, PCXBuffe
 
 #ifndef WIN32
 //windows epoll event process
-int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj, byte* pbyThreadCache, DWORD dwCacheLen, bool bRead)
+int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj, bool bRead)
 {
 	if (bRead)
 	{
@@ -608,11 +628,11 @@ int CXSocketServerKernel::ProcessEpollEvent(CXConnectionObject& conObj, byte* pb
 			{
 				if (m_pfOnRead != NULL)
 				{
-					m_pfOnRead(conObj, pBufObj, dwReadLen, pbyThreadCache, dwCacheLen);
+					m_pfOnRead(conObj, pBufObj, dwReadLen);
 				}
 				else
 				{
-					OnRead(conObj, pBufObj, dwReadLen, pbyThreadCache, dwCacheLen);
+					OnRead(conObj, pBufObj, dwReadLen);
 				}
 			}
 
@@ -802,3 +822,77 @@ bool  CXSocketServerKernel::SetWaitWritingEvent(CXConnectionObject &conObj, bool
 	return true;
 }
 
+//create a tcp socket, connect to the remote peer
+int CXSocketServerKernel::CreateTcpConnection(cxsocket & sock,
+    const string &strRemoteIp, WORD wRemotePort,
+    const string &strLocalIp, WORD wLocalPort, sockaddr_in& addrRemoteOut)
+{
+    if (wRemotePort == 0 || strRemoteIp.length()==0)
+    {
+        return INVALID_PARAMETER;
+    }
+
+    struct sockaddr_in sockLocal;
+    memset(&sockLocal, 0, sizeof(sockLocal));
+    socklen_t nAddrLen = sizeof(sockLocal);
+
+    sockLocal.sin_family = AF_INET;
+    sockLocal.sin_port = htons(wLocalPort);
+    if (strLocalIp.length() == 0)
+    {
+        sockLocal.sin_addr.s_addr = htonl(INADDR_ANY);
+    }
+    else
+    {
+        sockLocal.sin_addr.s_addr = inet_addr(strLocalIp.c_str());
+    }
+
+    char szInfo[1024] = { 0 };
+    sock = socket(PF_INET, SOCK_STREAM, 0);
+    if (sock == -1)
+    {
+        DWORD dwError = GetLastError();
+        sprintf_s(szInfo, 1024, "Failed to creat socket on local ip:port %s:%d\n", strLocalIp.c_str(), wLocalPort);
+        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+        return -2;
+    }
+
+
+    int iRet = bind(sock, (sockaddr*)&sockLocal, nAddrLen);
+    if (iRet == -1)
+    {
+        DWORD dwError = GetLastError();
+        sprintf_s(szInfo, 1024, "Failed to bind the socket to ip:port=%s:%d,error code is %d, description is %s\n",
+            strLocalIp.c_str(), wLocalPort, dwError, strerror(errno));
+        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+        closesocket(sock);
+        return -3;
+    }
+
+    memset(&addrRemoteOut, 0, sizeof(sockaddr_in));
+    nAddrLen = sizeof(sockaddr_in);
+
+    addrRemoteOut.sin_family = AF_INET;
+    addrRemoteOut.sin_port = htons(wLocalPort);
+    if (strLocalIp.length() == 0)
+    {
+        addrRemoteOut.sin_addr.s_addr = htonl(INADDR_ANY);
+    }
+    else
+    {
+        addrRemoteOut.sin_addr.s_addr = inet_addr(strRemoteIp.c_str());
+    }
+
+    iRet = ::connect(sock, reinterpret_cast<const struct sockaddr *>(&addrRemoteOut), nAddrLen);
+    if (iRet!=0)
+    {
+        DWORD dwError = GetLastError();
+        sprintf_s(szInfo, 1024, "Failed to connect to the remote address ip:port=%s:%d,error code is %d, description is %s\n",
+            strRemoteIp.c_str(), wRemotePort, dwError, strerror(errno));
+        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+        closesocket(sock);
+        return -4;
+    }
+    
+    return 0;
+}

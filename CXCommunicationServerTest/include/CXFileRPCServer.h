@@ -30,7 +30,7 @@ namespace CXCommunication
         CXFileRPCServer();
         ~CXFileRPCServer();
 
-        virtual string GetObjectName() { return "CXFileTcpV1"; }
+        virtual string GetObjectClassName() { return "CXFileTcpV1"; }
 
         virtual int DispatchMes(PCXMessageData pMes);
 
@@ -43,17 +43,15 @@ namespace CXCommunication
         virtual void MessageToString(PCXMessageData pMes, string &strMes);
 
 
-		int    OpenFile(PCXFileOpenFile pData, DWORD dwDataLen,CXConnectionObject *pCon);
-		int    CloseFile(PCXFileClose pData, DWORD dwDataLen, CXConnectionObject *pCon);
-		int    Write(PCXFileWrite pData, DWORD dwDataLen, CXConnectionObject *pCon);
-		int    Read(PCXFileRead pData, DWORD dwDataLen, CXConnectionObject *pCon);
-		int    Seek(PCXFileSeek pData, DWORD dwDataLen, CXConnectionObject *pCon);
+		int    OpenFile(PCXMessageData pMes, CXConnectionObject *pCon);
+		int    CloseFile(PCXMessageData pMes, CXConnectionObject *pCon);
+		int    Write(PCXMessageData pMes, CXConnectionObject *pCon);
+		int    Read(PCXMessageData pMes, CXConnectionObject *pCon);
+		int    Seek(PCXMessageData pMes, CXConnectionObject *pCon);
 
-		int    GetFileLength(CXConnectionObject *pCon);
+		int    GetFileLength(PCXMessageData pMes,CXConnectionObject *pCon);
 
-		int    GetCurrentFilePosition(CXConnectionObject *pCon);
-
-		int    SendPacket(const byte* pbData, DWORD dwLen, DWORD dwMesCode, CXConnectionObject *pCon);
+		int    GetCurrentFilePosition(PCXMessageData pMes,CXConnectionObject *pCon);
 
     private:
         CXFile64 m_file;

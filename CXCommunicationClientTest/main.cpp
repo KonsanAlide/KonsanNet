@@ -20,7 +20,7 @@ const string g_strDestIP = "127.0.0.1";
 //const string g_strDestIP = "192.168.0.104";
 //const string g_strDestIP = "192.168.0.118";
 
-const int iTestThreadNum = 10;
+const int iTestThreadNum = 31;
 
 using namespace std;
 using namespace CXCommunication;
@@ -137,7 +137,7 @@ void TestConection()
     }
 }
 
-void *ThreadWork(void *pVoid)
+DWORD ThreadWork(void *pVoid)
 {
     ThreadReadFileTest(pVoid);
     //ThreadWriteFileTest(pVoid);

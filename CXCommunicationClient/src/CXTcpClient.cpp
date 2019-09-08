@@ -33,9 +33,7 @@ namespace CXCommunication
         m_bCreated = false;
         m_bConnected = false;
         m_bClosing = false;
-        m_pSocket = NULL;
         m_iPacketNumber = 0;
-
 
         m_pbySendBuffer = NULL;
         m_dwSendBufferLen = 0;
@@ -58,9 +56,6 @@ namespace CXCommunication
 
         m_pDataParserHandle = NULL;
 
-        SetSendBufferSize(CLIENT_BUF_SIZE);
-        SetRecvBufferSize(CLIENT_BUF_SIZE);
-
 		m_encryptType = CXDataParserImpl::CXENCRYPT_TYPE_NONE;
 		m_compressType = CXDataParserImpl::CXCOMPRESS_TYPE_NONE;
 
@@ -68,56 +63,76 @@ namespace CXCommunication
         m_dwLeftRecvDataLen = 0;
 
 		memset(m_byRPCObjectGuid, 0, CX_GUID_LEN);
+        memset(m_byRequestID, 0, CX_GUID_LEN);
+        
+
+		m_bCloseInDeconstruction = true;
+
+		m_lpCacheObj = NULL;
+		m_bUsedMemoryCachePool = false;
+
+        m_bGetRealObjectID = false;
     }
 
 
     CXTcpClient::~CXTcpClient()
     {
-        if (m_bCreated)
+		if (m_bCloseInDeconstruction)
+		{
+			Close();
+		}
+        if (!m_bUsedMemoryCachePool)
         {
-            Close();
+            if (m_pbySendBuffer != NULL)
+            {
+                delete[]m_pbySendBuffer;
+            }
+
+            if (m_pbyRealSendBuffer != NULL)
+            {
+                delete[]m_pbyRealSendBuffer;
+            }
+
+            if (m_pbyCacheSendBuffer != NULL)
+            {
+                delete[]m_pbyCacheSendBuffer;
+            }
+
+            if (m_pbyRecvBuffer != NULL)
+            {
+                delete[]m_pbyRecvBuffer;
+            }
+
+            if (m_pbyParserBuffer != NULL)
+            {
+                delete[]m_pbyParserBuffer;
+            }
+
+            if (m_pbyCacheRecvBuffer != NULL)
+            {
+                delete[]m_pbyCacheRecvBuffer;
+            }
         }
-        if (m_pbySendBuffer != NULL)
-        {
-            delete[]m_pbySendBuffer;
-        }
+
         m_pbySendBuffer = NULL;
         m_dwSendBufferLen = 0;
 
-        if (m_pbyRealSendBuffer != NULL)
-        {
-            delete[]m_pbyRealSendBuffer;
-        }
+        m_pbyCacheSendBuffer = NULL;
+        m_dwCacheSendBufferLen = 0;
+
         m_pbyRealSendBuffer = NULL;
         m_dwRealSendBufferLen = 0;
 
-		if (m_pbyCacheSendBuffer != NULL)
-		{
-			delete[]m_pbyCacheSendBuffer;
-		}
-		m_pbyCacheSendBuffer = NULL;
-		m_dwCacheSendBufferLen = 0;
-
-        if (m_pbyRecvBuffer != NULL)
-        {
-            delete[]m_pbyRecvBuffer;
-        }
         m_pbyRecvBuffer = NULL;
         m_dwRecvBufferLen = 0;
 
-        if (m_pbyParserBuffer != NULL)
-        {
-            delete[]m_pbyParserBuffer;
-        }
         m_pbyParserBuffer = NULL;
         m_dwParserBufferLen = 0;
-
-        if (m_pbyCacheRecvBuffer != NULL)
-        {
-            delete[]m_pbyCacheRecvBuffer;
-        }
+        
         m_pbyCacheRecvBuffer = NULL;
         m_dwCacheRecvBufferLen = 0;
+
+        m_bGetRealObjectID = false;
     }
 
     //create a socket,set the address and flags
@@ -131,43 +146,42 @@ namespace CXCommunication
         {
             return INVALID_PARAMETER;
         }
+		
+		if (!SetSendBufferSize(CLIENT_BUF_SIZE))
+		{
+			return -3;
+		}
+		if (!SetRecvBufferSize(CLIENT_BUF_SIZE))
+		{
+			return -3;
+		}
 
-        if (m_pSocket==NULL)
+        if (bAccepted)
         {
-            m_pSocket = new CXSocketImpl;
-            if (m_pSocket == NULL)
+            if (m_socket.CreateByAccepted(sock) == 0)
             {
-                return -3;
-            }
-
-            if (bAccepted)
-            {
-                if (m_pSocket->CreateByAccepted(sock) == 0)
-                {
-                    m_bConnected = true;
-                    m_bCreated = true;
-                }
-            }
-            else
-            {
-                if (m_pSocket->Create() == 0)
-                {
-                    m_bCreated = true;
-                }
-            }
-
-            if (!m_bCreated)
-            {
-                delete m_pSocket;
-                m_pSocket = NULL;
-                return -2;
-            }
-            else
-            {
-                m_pSocket->SetNoDelay(true);
-                return RETURN_SUCCEED;
+                m_bConnected = true;
+                m_bCreated = true;
             }
         }
+        else
+        {
+            if (m_socket.Create() == 0)
+            {
+                m_bCreated = true;
+            }
+        }
+
+        if (!m_bCreated)
+        {
+            return -2;
+        }
+        else
+        {
+            m_socket.SetNoDelay(true);
+            return RETURN_SUCCEED;
+        }
+        
         return RETURN_SUCCEED;
     }
 
@@ -186,10 +200,10 @@ namespace CXCommunication
         {
             return -2;
         }
-        int iRet = m_pSocket->Connect(address);
+        int iRet = m_socket.Connect(address);
         if (iRet == 0)
         {
-            m_pSocket->SetNoDelay(true);
+            m_socket.SetNoDelay(true);
             m_bConnected = true;
             m_addressRemote.SetAddress(address.GetAddress());
             return RETURN_SUCCEED;
@@ -224,7 +238,7 @@ namespace CXCommunication
                 break;
             }
 
-            iRecv = m_pSocket->RecvBytes(bpBuf+ iOffset, iWantRecvLen- iOffset);
+            iRecv = m_socket.RecvBytes(bpBuf+ iOffset, iWantRecvLen- iOffset);
 
             if (iRecv != SOCKET_ERROR)
             {
@@ -282,7 +296,7 @@ namespace CXCommunication
                 break;
             }
 
-            iSent = m_pSocket->SendBytes(bpBuf + iOffset, iWantSendLen - iOffset);
+            iSent = m_socket.SendBytes(bpBuf + iOffset, iWantSendLen - iOffset);
 
             if (iSent != SOCKET_ERROR)
             {
@@ -317,31 +331,29 @@ namespace CXCommunication
 
     int CXTcpClient::Close()
     {
-        if (m_pSocket == NULL)
-        {
-            return 0;
-        }
         if (IsConnected())
         {
-            m_pSocket->SetNoDelay(true);
-            m_pSocket->SetLinger(true,0);
+            m_socket.SetNoDelay(true);
+            m_socket.SetLinger(true,0);
             m_bClosing = true;
-            m_pSocket->Close();
-            //m_pSocket->Shutdown();
+            m_socket.Close();
+            //m_socket.Shutdown();
         }
         else
         {
             if (IsCreated())
             {
-                m_pSocket->Close();
+                m_socket.Close();
             }
         }
 
         m_bClosing = false;
         m_bConnected = false;
 
-        delete m_pSocket;
-        m_pSocket = NULL;
+        m_dwLeftDataBeginPos = 0;
+        m_dwLeftRecvDataLen = 0;
+
+        m_bGetRealObjectID = false;
 
         return 0;
     }
@@ -367,6 +379,8 @@ namespace CXCommunication
         DWORD dwPacketLen = dwLen + sizeof(CXPacketData) - 1;
         DWORD dwOrignDataLen = dwPacketLen- sizeof(CXPacketHeader);
 
+        m_guidObj.GenerateNewGuid(m_byRequestID);
+
         //use a same buffer
         if (!(pbData >= m_pbySendBuffer && pbData < (m_pbySendBuffer + m_dwSendBufferLen)))
         {
@@ -386,7 +400,7 @@ namespace CXCommunication
 			pBodyData->dwMesCode = dwMesCode;
 			pBodyData->dwPacketNum = ++m_iPacketNumber;
 			memcpy(pBodyData->byObjectGuid, m_byRPCObjectGuid, CX_GUID_LEN);
-			m_guidObj.GenerateNewGuid(pBodyData->byPacketGuid);
+            memcpy(pBodyData->byRequestID,m_byRequestID, CX_GUID_LEN);
 
 			// not use the socket buffer to save data
 			if (pbData < m_pbySendBuffer || pbData >(m_pbySendBuffer + m_dwSendBufferLen))
@@ -414,7 +428,7 @@ namespace CXCommunication
             pBodyData->dwMesCode = dwMesCode;
             pBodyData->dwPacketNum = ++m_iPacketNumber;
 			memcpy(pBodyData->byObjectGuid, m_byRPCObjectGuid, CX_GUID_LEN);
-			m_guidObj.GenerateNewGuid(pBodyData->byPacketGuid);
+            memcpy(pBodyData->byRequestID, m_byRequestID, CX_GUID_LEN);
 
             // not use the socket buffer to save data
             if (pbData < m_pbyRealSendBuffer || pbData >(m_pbyRealSendBuffer + m_dwRealSendBufferLen))
@@ -540,6 +554,7 @@ namespace CXCommunication
 			return -7;
 		}
 
+        PCXPacketBodyData pBodyData = NULL;
 		if ((CXDataParserImpl::CXENCRYPT_TYPE)header.byEncryptFlag != CXDataParserImpl::CXENCRYPT_TYPE_NONE ||
 			(CXDataParserImpl::CXCOMPRESS_TYPE)header.byCompressFlag != CXDataParserImpl::CXCOMPRESS_TYPE_NONE)
 		{
@@ -560,7 +575,7 @@ namespace CXCommunication
 			}
 			memcpy(m_pbyRecvBuffer, m_pbyParserBuffer, dwDestLen);
 
-			PCXPacketBodyData pBodyData = (PCXPacketBodyData)m_pbyRecvBuffer;
+			pBodyData = (PCXPacketBodyData)m_pbyRecvBuffer;
 			dwMesCode = pBodyData->dwMesCode;
 			DWORD dwRealDataLen = dwDestLen - (sizeof(CXPacketBodyData) - 1);
 
@@ -568,13 +583,25 @@ namespace CXCommunication
 		}
 		else
 		{
-			PCXPacketBodyData pBodyData = (PCXPacketBodyData)m_pbyRecvBuffer;
+			pBodyData = (PCXPacketBodyData)m_pbyRecvBuffer;
 			dwMesCode = pBodyData->dwMesCode;
 			DWORD dwRealDataLen = iTransLen - (sizeof(CXPacketBodyData) - 1);
 			
 			iReadBytes = dwRealDataLen;
-
 		}
+
+        if (!m_bGetRealObjectID)
+        {
+            //if the object id had been changed by the server, also change it in here 
+            if (memcmp(pBodyData->byObjectGuid, m_byRPCObjectGuid, CX_GUID_LEN) != 0)
+            {
+                if (memcmp(pBodyData->byRequestID, m_byRequestID, CX_GUID_LEN) == 0)
+                {
+                    memcpy(m_byRPCObjectGuid, pBodyData->byObjectGuid, CX_GUID_LEN);
+                    m_bGetRealObjectID = true;
+                }
+            }
+        }
 
 		return RETURN_SUCCEED;
 	}
@@ -612,6 +639,59 @@ namespace CXCommunication
         byte *pData = NULL;
         byte *pDataReal = NULL;
 		byte *pCacheData = NULL;
+
+		//used memory cache
+		if (m_lpCacheObj && m_bUsedMemoryCachePool)
+		{
+			pData = (byte *)m_lpCacheObj->GetBuffer(dwBufSize);
+			pDataReal = (byte *)m_lpCacheObj->GetBuffer(dwBufSize * 2);
+			pCacheData = (byte *)m_lpCacheObj->GetBuffer(dwBufSize * 2);
+			if (pData != NULL && pDataReal != NULL && pCacheData != NULL)
+			{
+				if (m_pbySendBuffer != NULL)
+				{
+					delete[]m_pbySendBuffer;
+					m_pbySendBuffer = NULL;
+				}
+				m_pbySendBuffer = pData;
+				m_dwSendBufferLen = dwBufSize;
+
+				if (m_pbyRealSendBuffer != NULL)
+				{
+					delete[]m_pbyRealSendBuffer;
+					m_pbyRealSendBuffer = NULL;
+				}
+				m_pbyRealSendBuffer = pDataReal;
+				m_dwRealSendBufferLen = dwBufSize * 2;
+
+				if (m_pbyCacheSendBuffer != NULL)
+				{
+					delete[]m_pbyCacheSendBuffer;
+					m_pbyCacheSendBuffer = NULL;
+				}
+				m_pbyCacheSendBuffer = pCacheData;
+				m_dwCacheSendBufferLen = dwBufSize * 2;
+				return true;
+			}
+			else
+			{
+				if (pData != NULL)
+				{
+					m_lpCacheObj->FreeBuffer(pData);
+				}
+				if (pDataReal != NULL)
+				{
+					m_lpCacheObj->FreeBuffer(pDataReal);
+				}
+				if (pCacheData != NULL)
+				{
+					m_lpCacheObj->FreeBuffer(pCacheData);
+				}
+				return false;
+			}
+		}
+
+
         try
         {
             pData = new byte[dwBufSize];
@@ -684,6 +764,60 @@ namespace CXCommunication
         byte *pData = NULL;
         byte *pDataParser = NULL;
 		byte *pCacheData = NULL;
+
+		//used memory cache
+		if (m_lpCacheObj && m_bUsedMemoryCachePool)
+		{
+			pData = (byte *)m_lpCacheObj->GetBuffer(dwBufSize);
+			pDataParser = (byte *)m_lpCacheObj->GetBuffer(dwBufSize * 2);
+			pCacheData = (byte *)m_lpCacheObj->GetBuffer(dwBufSize * 2);
+			if (pData != NULL && pDataParser != NULL && pCacheData != NULL)
+			{
+				if (m_pbyRecvBuffer != NULL)
+				{
+					delete[]m_pbyRecvBuffer;
+					m_pbyRecvBuffer = NULL;
+				}
+				m_pbyRecvBuffer = pData;
+				m_dwRecvBufferLen = dwBufSize;
+
+				if (m_pbyParserBuffer != NULL)
+				{
+					delete[]m_pbyParserBuffer;
+					m_pbyParserBuffer = NULL;
+				}
+
+				m_pbyParserBuffer = pDataParser;
+				m_dwParserBufferLen = dwBufSize * 2;
+
+				if (m_pbyCacheRecvBuffer != NULL)
+				{
+					delete[]m_pbyCacheRecvBuffer;
+					m_pbyCacheRecvBuffer = NULL;
+				}
+
+				m_pbyCacheRecvBuffer = pCacheData;
+				m_dwCacheRecvBufferLen = dwBufSize * 2;
+				return true;
+			}
+			else
+			{
+				if (pData != NULL)
+				{
+					m_lpCacheObj->FreeBuffer(pData);
+				}
+				if (pDataParser != NULL)
+				{
+					m_lpCacheObj->FreeBuffer(pDataParser);
+				}
+				if (pCacheData != NULL)
+				{
+					m_lpCacheObj->FreeBuffer(pCacheData);
+				}
+				return false;
+			}
+		}
+
         try
         {
             pData = new byte[dwBufSize];
@@ -753,4 +887,22 @@ namespace CXCommunication
         dwBufSize = m_dwParserBufferLen - (sizeof(CXPacketBodyData) - 1);
         return (m_pbyParserBuffer + (sizeof(CXPacketBodyData) - 1));
     }
+
+	void CXTcpClient::SetCloseInDeconstruction(bool bSet)
+	{ 
+		m_bCloseInDeconstruction = bSet; 
+		m_socket.SetCloseInDeconstruction(bSet);
+	}
+
+	void CXTcpClient::SetUsedMemoryCachePool(bool bSet, CXMemoryCacheManager* pCacheObj)
+	{
+		m_lpCacheObj = pCacheObj;
+		m_bUsedMemoryCachePool = bSet;
+	}
+
+
+	cxsocket CXTcpClient::GetSocket()
+	{
+		return m_socket.GetSocketValue();
+	}
 }

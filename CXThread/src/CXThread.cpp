@@ -16,31 +16,37 @@ limitations under the License.
 Description£º
 *****************************************************************************/
 #include "CXThread.h"
+#include "PlatformFunctionDefine.h"
 #ifndef WIN32
 #include <string.h>
 #include <pthread.h>
 #endif
+#include "CXThreadPool.h"
 
 CXThread::CXThread()
 {
-
+	m_dwThreadID = 0;
     m_hThread = NULL;
 #ifndef WIN32
     memset(&m_ThreadAttr,0,sizeof(m_ThreadAttr));
 #endif
-
+	m_bStarted = false;
     m_funRun = NULL;
-    m_pThreadPara = NULL;
+	m_pTaskPara = NULL;
     m_bRunning = false;
+
+	m_dwThreadResult = 0;
+
+	m_pbyFirstCache = NULL;
+	m_dwFirstCacheSize=0;
+
+	m_pbySecondCache = NULL;
+	m_dwSecondCacheSize = 0;
 }
 
 CXThread::~CXThread()
 {
-    if (m_bRunning)
-    {
-        Stop();
-        Wait();
-    }
+	Destroy();
 
     if (NULL != m_hThread)
     {
@@ -52,75 +58,139 @@ CXThread::~CXThread()
 
     }
 
+	if (m_pbyFirstCache != NULL)
+	{
+		delete[]m_pbyFirstCache;
+	}
+	if (m_pbySecondCache != NULL)
+	{
+		delete[]m_pbySecondCache;
+	}
+
+	m_pbyFirstCache = NULL;
+	m_dwFirstCacheSize = 0;
+
+	m_pbySecondCache = NULL;
+	m_dwSecondCacheSize = 0;
+
     m_hThread = NULL;
     m_bRunning = false;
 }
 
-// start the thread
-int CXThread::Start(RunFun funThread, void *pThreadPara)
+//create thread
+bool  CXThread::Create()
 {
-    int iRet = 0;
-    int iStackSize = 1024 * 1024 * 5;//5MB
-    m_funRun = funThread;
-    m_pThreadPara = pThreadPara;
+	bool bRet = true;
+    //in 32bit program, if the stack size is too large,
+    //and the number of the threads is also too more,
+    //that maybe case an error failed to allocated memory.
+    //because the threads had used too more virtual address of the process space.
+	//int iStackSize = 1024 * 1024 * 5;//5MB
+    //thre default size of the thread stack is 1MB in windows
+    //thre default size of the thread stack is 8092KB in linux
+    int iStackSize = 0;
+
+	m_bStarted = true;
 #ifdef WIN32
-    m_hThread = (HANDLE)_beginthreadex(NULL, iStackSize, ThreadFunction, this, 0, NULL);
-    if (NULL == m_hThread)
-    {
-        iRet = -1;
-    }
+	m_hThread = (HANDLE)_beginthreadex(NULL, iStackSize, ThreadFunction, this, 0, (unsigned int*)&m_dwThreadID);
+	if (NULL == m_hThread)
+	{
+		bRet = false;
+		m_bStarted = false;
+	}
 #else
-    //pthread_attr_setscope (&pCurThread->threadAttr, PTHREAD_SCOPE_SYSTEM);
-    //pthread_attr_setstacksize( &pCurThread->threadAttr, 5*1024 );
-    //pthread_attr_setdetachstate (&pCurThread->threadAttr, PTHREAD_CREATE_DETACHED);
-    pthread_attr_init(&m_ThreadAttr);
-    iRet = pthread_create(&m_hThread, &m_ThreadAttr, ThreadFunction, this);
-    if (0 == iRet)
-    {
-        iRet = 0;
-    }
-    else
-    {
-        m_hThread = 0;
-        pthread_attr_destroy(&m_ThreadAttr);
-        iRet = -1;
-    }
+	//pthread_attr_setscope (&pCurThread->threadAttr, PTHREAD_SCOPE_SYSTEM);
+	//pthread_attr_setstacksize( &pCurThread->threadAttr, 5*1024 );
+	//pthread_attr_setdetachstate (&pCurThread->threadAttr, PTHREAD_CREATE_DETACHED);
+	pthread_attr_init(&m_ThreadAttr);
+	int iRet = pthread_create(&m_hThread, &m_ThreadAttr, ThreadFunction, this);
+	if (0 != iRet)
+	{
+		m_hThread = 0;
+		pthread_attr_destroy(&m_ThreadAttr);
+		bRet = false;
+		m_bStarted = false;
+	}
+	else
+	{
+		m_dwThreadID = (DWORD)m_hThread;
+	}
 #endif
-    
-    return iRet;
+
+	return bRet;
+}
+
+//stop the thread task and terminal the thread
+void CXThread::Destroy()
+{
+	m_bStarted = false;
+	if (m_bRunning)
+	{
+		Stop();
+	}
+}
+
+// start the thread
+int CXThread::Start(RunFun funTask, void *pTaskPara)
+{
+	if (m_bRunning)
+	{
+		return -2;
+	}
+
+	if (!m_bStarted)
+	{
+		if (!Create())
+		{
+			m_bRunning = false;
+			return -1;
+		}
+	}
+    m_funRun = funTask;
+	m_pTaskPara = pTaskPara;
+	m_eveWaitRunning.SetEvent();
+	m_bRunning = true;
+
+    return 0;
 }
 
 //stop the thread
 void  CXThread::Stop()
 {
+	if (NULL != m_hThread)
+	{
+		m_bStarted = false;
+		m_bRunning = false;
+		m_eveWaitRunning.SetEvent();
+		
 #ifdef WIN32
-    if (NULL != m_hThread)
-    {
         TerminateThread(m_hThread,-1);
-    }
-
+		WaitForSingleObject(m_hThread, INFINITE);
+		if (NULL != m_hThread)
+		{
+			CloseHandle(m_hThread);
+		}
 #else
-    pthread_cancel(m_hThread);
+		pthread_cancel(m_hThread);
+		pthread_join(m_hThread, NULL);
 #endif // WIN32
-
+		m_hThread = NULL;
+		m_dwThreadResult = -1;
+	}
 }
 
-// wait the thread to exit
+// wait the thread task to finish
 DWORD CXThread::Wait()
 {
-#ifdef WIN32
-    WaitForSingleObject(m_hThread, INFINITE);
-    if (NULL != m_hThread)
-    {
-        CloseHandle(m_hThread);
-    }
-
-#else
-    pthread_join(m_hThread, NULL);
-#endif // WIN32
-
-    m_hThread = NULL;
-    return 0;
+	if (NULL == m_hThread)
+	{
+		return WAIT_OBJECT_0;
+	}
+	if (!m_bRunning || !m_bStarted)
+	{
+		return WAIT_OBJECT_0;
+	}
+	return m_eveFinish.WaitForSingleObject(INFINITE);
 }
 
 #ifdef WIN32
@@ -137,21 +207,132 @@ void* CXThread::ThreadFunction(void* arg)
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 #endif //WIN32
 
-    void *pRet = NULL;
     CXThread *pThis = (CXThread*)arg;
-    pThis->m_bRunning = true;
-    if (pThis->m_funRun != NULL)
-    {
-        pRet = pThis->m_funRun(pThis->GetThreadPara());
-    }
-    pThis->m_bRunning = false;
-
+	if (pThis == NULL)
 #ifdef WIN32
-    pThis->m_hThread = NULL;
-    return (unsigned int)pRet;
-
+        return DWORD(-1);
 #else
-    return pRet;
+        return (void*)-1;
 #endif //WIN32
 
+    pThis->ThreadLoop();
+    
+	return 0;
+}
+
+//the main logic
+void CXThread::ThreadLoop()
+{
+	DWORD dwRet = 0;
+	DWORD dwWaitRet = 0;
+	bool  bWaitFailed = false;
+	while (m_bStarted)
+	{
+		dwWaitRet = m_eveWaitRunning.WaitForSingleObject(INFINITE);
+		if (!m_bStarted)
+		{
+			break;
+		}
+		switch (dwWaitRet)
+		{
+		case WAIT_OBJECT_0:
+			break;
+		case WAIT_FAILED:
+			bWaitFailed = true;
+			break;
+		case WAIT_TIMEOUT:
+			continue;
+		default:
+			continue;
+		}
+		if (bWaitFailed)
+		{
+			break;
+		}
+		m_dwThreadResult = (DWORD)m_funRun(m_pTaskPara);
+		m_bRunning = false;
+		m_eveFinish.SetEvent();
+		if (m_pThreadPool != NULL)
+		{
+			((CXThreadPool*)m_pThreadPool)->ReleaseThread(this);
+		}
+	}
+
+#ifdef WIN32
+	m_hThread = NULL;
+#else
+#endif //WIN32
+}
+
+bool   CXThread::AllocateFirstCache(DWORD dwSize)
+{
+	bool bRet = true;
+
+	if (dwSize <= m_dwFirstCacheSize)
+	{
+		return true;
+	}
+
+	byte *pData = NULL;
+	try
+	{
+		pData = new byte[dwSize];
+		if (pData == NULL)
+		{
+			return false;
+		}
+
+		if (m_pbyFirstCache != NULL)
+		{
+			delete[]m_pbyFirstCache;
+			m_pbyFirstCache = NULL;
+		}
+		m_pbyFirstCache = pData;
+		m_dwFirstCacheSize = dwSize;
+		return true;
+	}
+	catch (const bad_alloc& e)
+	{
+        DWORD dwError = GetLastError();
+        string strEr = strerror(dwError);
+		return false;
+	}
+
+	return bRet;
+}
+
+bool   CXThread::AllocateSecondCache(DWORD dwSize)
+{
+	bool bRet = true;
+
+	if (dwSize <= m_dwSecondCacheSize)
+	{
+		return true;
+	}
+
+	byte *pData = NULL;
+	try
+	{
+		pData = new byte[dwSize];
+		if (pData == NULL)
+		{
+			return false;
+		}
+
+		if (m_pbySecondCache != NULL)
+		{
+			delete[]m_pbySecondCache;
+			m_pbySecondCache = NULL;
+		}
+		m_pbySecondCache = pData;
+		m_dwSecondCacheSize = dwSize;
+		return true;
+	}
+	catch (const bad_alloc& e)
+	{
+        DWORD dwError = GetLastError();
+        string strEr = strerror(dwError);
+		return false;
+	}
+	return bRet;
 }

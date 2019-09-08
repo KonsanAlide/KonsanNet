@@ -21,6 +21,11 @@ Description£º
 #include<sys/time.h>
 #endif
 #include "PlatformFunctionDefine.h"
+#include <chrono>
+#include <ctime>
+#include "CXRPCObjectManager.h"
+using namespace std;
+
 
 void* ThreadDetect(void* lpvoid);
 namespace CXCommunication
@@ -31,6 +36,7 @@ namespace CXCommunication
         m_pfOnClose = NULL;
         m_bStarted = false;
         m_pLogHandle = NULL;
+		m_pObjectPool = NULL;
     }
 
     CXConnectionsManager::~CXConnectionsManager()
@@ -144,21 +150,31 @@ namespace CXCommunication
     //return value:
     //    ==0 succeed
     //    ==-1 find a same index connection
-    int CXConnectionsManager::AddUsingConnection(CXConnectionObject * pObj)
+    void CXConnectionsManager::AddUsingConnection(CXConnectionObject * pObj)
     {
         m_lockUsingConnections.Lock();
-        if (m_mapUsingConnections.find(pObj->GetConnectionIndex()) != m_mapUsingConnections.end())
+        if (!pObj->IsProxyConnection())
         {
-            m_lockUsingConnections.Unlock();
-            return -1;
+            unordered_map<uint64, CXConnectionObject *>::iterator itFind = m_mapUsingConnections.find(pObj->GetConnectionIndex());
+            if (itFind == m_mapUsingConnections.end())
+            {
+                m_mapUsingConnections[pObj->GetConnectionIndex()] = pObj;
+            } 
         }
-        else
+        m_lockUsingConnections.Unlock();
+    }
+
+    CXConnectionObject *  CXConnectionsManager::FindUsingConnection(uint64 uiConIndex)
+    {
+        CXConnectionObject * pObj = NULL;
+        m_lockUsingConnections.Lock();
+        unordered_map<uint64, CXConnectionObject *>::iterator it = m_mapUsingConnections.find(uiConIndex);
+        if (it != m_mapUsingConnections.end())
         {
-            m_mapUsingConnections[pObj->GetConnectionIndex()] = pObj;
-            //m_mapUsingConnections.insert(make_pair(pObj->GetConnectionIndex(), pObj));
-            m_lockUsingConnections.Unlock();
-            return 0;
+            pObj = it->second;
         }
+        m_lockUsingConnections.Unlock();
+        return pObj;
     }
 
     uint64 CXConnectionsManager::GetCurrentConnectionIndex()
@@ -189,7 +205,6 @@ namespace CXCommunication
     //contain the process of the pending connections
     bool CXConnectionsManager::DetectConnections()
     {
-        uint64 iIndex = 0;
         while (m_bStarted)
         {
             m_eveWaitDetect.WaitForSingleObject(50);
@@ -197,127 +212,23 @@ namespace CXCommunication
             {
                 break;
             }
-            iIndex++;
-#ifdef WIN32
-            uint64 uiCurTime = GetTickCount64();
-#else
-            struct timeval tv;
-            gettimeofday(&tv, NULL);
-            uint64 uiCurTime = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-#endif
-            queue<CXConnectionObject *> queueTimeOutConnections;
-            m_lockUsingConnections.Lock();
-            unordered_map<uint64, CXConnectionObject *>::iterator it;
-            it = m_mapUsingConnections.begin();
-            for (; it != m_mapUsingConnections.end(); ++it)
-            {
-                CXConnectionObject * pCon = it->second;
-                if (pCon->GetTimeOutMSeconds() != 0xffffffff)
-                {
-                    if (pCon->GetState() < CXConnectionObject::CLOSING)
-                    {
-                        if (pCon->GetLastPacketTime() == 0)
-                        {
-                            if (uiCurTime>pCon->GetAcceptedTime())
-                            {
-                                if (uiCurTime - pCon->GetAcceptedTime() > (pCon->GetTimeOutMSeconds() * 2))
-                                {
-                                    queueTimeOutConnections.push(pCon);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (uiCurTime>pCon->GetLastPacketTime())
-                            {
-                                if (uiCurTime - pCon->GetLastPacketTime() > (pCon->GetTimeOutMSeconds() * 2))
-                                {
-                                    queueTimeOutConnections.push(pCon);
-                                }
-                            }
-                        }
-                    }
-                    else if (iIndex % 10 == 0) //clear the time out connections
-                    {
-                        uint64 nTimeSpec = 0;
-                        if (pCon->GetLastPacketTime() == 0)
-                        {
-                            if (uiCurTime > pCon->GetAcceptedTime())
-                            {
-                                nTimeSpec = uiCurTime - pCon->GetAcceptedTime();
-                            }
-                        }
-                        else if (uiCurTime > pCon->GetLastPacketTime())
-                        {
-                            nTimeSpec = uiCurTime - pCon->GetLastPacketTime();
-                        }
 
-                        if (nTimeSpec > 0 && nTimeSpec > (pCon->GetTimeOutMSeconds() * 2))
-                        {
-                            queueTimeOutConnections.push(pCon);
-                        }
-                    }
-                }
-            }
-
-            m_lockUsingConnections.Unlock();
-
-            while (queueTimeOutConnections.size() > 0)
-            {
-                CXConnectionObject * pCon = queueTimeOutConnections.front();
-                queueTimeOutConnections.pop();
-                if (m_pfOnClose != NULL)
-                {
-
-                    char  szInfo[1024] = { 0 };
-                    sprintf_s(szInfo, 1024, "A connection is timeout,close it, connection index is %lld\n",
-                        pCon->GetConnectionIndex());
-                    if(m_pLogHandle!= NULL)
-                        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-                    m_pfOnClose(*pCon, TIME_OUT);
-                }
-            }
-
-#ifdef WIN32
-            uiCurTime = GetTickCount64();
-#else
-            gettimeofday(&tv, NULL);
-            uiCurTime = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-#endif
-            
-            m_lockReleasedConnections.Lock();
-            list<CXConnectionObject*>::iterator itReleased = m_listReleasedConnections.begin();
-            for (; itReleased!= m_listReleasedConnections.end();)
-            {
-                CXConnectionObject * pCon = *itReleased;
-                if (pCon != NULL)
-                {
-                    if (uiCurTime>pCon->GetReleasedTime())
-                    {
-                        if (uiCurTime - pCon->GetReleasedTime() > 2000)
-                        {
-                            AddFreeConnectionObj(pCon);
-                            itReleased = m_listReleasedConnections.erase(itReleased);
-                            continue;
-                        }
-                    }
-                }
-                ++itReleased;
-            }
-            m_lockReleasedConnections.Unlock();
+			DetectTimeoutConnections();
+			TravelReleaseList();
+			DetectRequestTimeout();
             
         }
         return true;
     }
 
-    void* ThreadDetect(void* lpvoid)
+    DWORD ThreadDetect(void* lpvoid)
     {
         CXConnectionsManager * pServer = (CXConnectionsManager*)lpvoid;
         bool bRet = pServer->DetectConnections();
         if (bRet)
             return 0;
         else
-            return (void*)(-1);
+            return (DWORD)(-1);
     }
 
     // start the detected thread
@@ -346,22 +257,254 @@ namespace CXCommunication
     void CXConnectionsManager::ReleaseConnection(CXConnectionObject * pObj)
     {
         m_lockUsingConnections.Lock();
-        unordered_map<uint64, CXConnectionObject *>::iterator it;
-        it = m_mapUsingConnections.find(pObj->GetConnectionIndex());
-        if (it != m_mapUsingConnections.end())
-        {
-            m_mapUsingConnections.erase(it);
-            m_lockUsingConnections.Unlock();
 
-            m_lockReleasedConnections.Lock();
-            m_listReleasedConnections.push_back(pObj);
-            m_lockReleasedConnections.Unlock();
+        if (pObj->IsProxyConnection())
+        {
+            char szBuf[128] = { 0 };
+            sprintf_s(szBuf, 128, "%s:%d", pObj->GetRemoteIP().c_str(), pObj->GetRemotePort());
+            unordered_map<string, unordered_map<uint64, CXConnectionObject *>>::iterator it;
+            it = m_mapAttachProxyConnectionsPool.find(szBuf);
+            if (it != m_mapAttachProxyConnectionsPool.end())
+            {
+                unordered_map<uint64, CXConnectionObject *>::iterator itCon;
+                itCon = it->second.find(pObj->GetConnectionIndex());
+                if (itCon != it->second.end())
+                {
+                    it->second.erase(itCon);
+                    m_lockUsingConnections.Unlock();
+
+                    m_lockReleasedConnections.Lock();
+                    m_listReleasedConnections.push_back(pObj);
+                    m_lockReleasedConnections.Unlock();
+                    return;
+                }
+            }
+            m_lockUsingConnections.Unlock();
         }
         else
         {
-            m_lockUsingConnections.Unlock();
+            unordered_map<uint64, CXConnectionObject *>::iterator it;
+            it = m_mapUsingConnections.find(pObj->GetConnectionIndex());
+            if (it != m_mapUsingConnections.end())
+            {
+                m_mapUsingConnections.erase(it);
+                m_lockUsingConnections.Unlock();
+
+                m_lockReleasedConnections.Lock();
+                m_listReleasedConnections.push_back(pObj);
+                m_lockReleasedConnections.Unlock();
+            }
+            else
+            {
+                m_lockUsingConnections.Unlock();
+            }
         }
     }
 
+	CXConnectionObject * CXConnectionsManager::GetProxyClient(string strIP, WORD wPort)
+	{
+		CXConnectionObject * pCon = NULL;
+		char szBuf[128] = { 0 };
+		sprintf_s(szBuf, 128, "%s:%d", strIP.c_str(), wPort);
+		unordered_map<string, unordered_map<uint64, CXConnectionObject *>>::iterator it;
+		it = m_mapAttachProxyConnectionsPool.find(szBuf);
+		if (it != m_mapAttachProxyConnectionsPool.end())
+		{
+			
+		}
+		return pCon;
+	}
+
+
+	void CXConnectionsManager::DetectTimeoutConnections()
+	{
+		int64 uiCurTime = GetCurrentTimeMS();
+		uint64 uiBeginTime = 0;
+		queue<CXConnectionObject *> queueTimeOutConnections;
+		m_lockUsingConnections.Lock();
+		unordered_map<uint64, CXConnectionObject *>::iterator it;
+		it = m_mapUsingConnections.begin();
+		for (; it != m_mapUsingConnections.end(); ++it)
+		{
+			CXConnectionObject * pCon = it->second;
+			if (pCon->GetTimeOutMSeconds() != 0xffffffff)
+			{
+				uiBeginTime = pCon->GetLastPacketTime();
+				if (uiBeginTime == 0)
+				{
+					uiBeginTime = pCon->GetAcceptedTime();
+				}
+				if (uiCurTime > uiBeginTime && (uiCurTime- uiBeginTime)> (pCon->GetTimeOutMSeconds() * 2))
+				{
+					queueTimeOutConnections.push(pCon);
+				}
+			}
+		}
+
+		m_lockUsingConnections.Unlock();
+
+		while (queueTimeOutConnections.size() > 0)
+		{
+			CXConnectionObject * pCon = queueTimeOutConnections.front();
+			queueTimeOutConnections.pop();
+			if (m_pfOnClose != NULL)
+			{
+				char  szInfo[1024] = { 0 };
+				sprintf_s(szInfo, 1024, "A connection is timeout,close it, connection index is %lld\n",
+					pCon->GetConnectionIndex());
+				if (m_pLogHandle != NULL)
+					m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+				m_pfOnClose(*pCon, TIME_OUT);
+			}
+		}
+	}
+	void CXConnectionsManager::TravelReleaseList()
+	{
+		int64 uiCurTime = GetCurrentTimeMS();
+		m_lockReleasedConnections.Lock();
+		list<CXConnectionObject*>::iterator itReleased = m_listReleasedConnections.begin();
+		for (; itReleased != m_listReleasedConnections.end();)
+		{
+			CXConnectionObject * pCon = *itReleased;
+			if (pCon != NULL)
+			{
+				if (uiCurTime > pCon->GetReleasedTime())
+				{
+					if (uiCurTime - pCon->GetReleasedTime() > 2000)
+					{
+						AddFreeConnectionObj(pCon);
+						itReleased = m_listReleasedConnections.erase(itReleased);
+						continue;
+					}
+				}
+			}
+			++itReleased;
+		}
+		m_lockReleasedConnections.Unlock();
+	}
+	void CXConnectionsManager::DetectRequestTimeout()
+	{
+		if (m_pObjectPool != NULL)
+		{
+			((CXRPCObjectManager*)m_pObjectPool)->TravelTimeoutRequest();
+		}
+	}
+
+	//pszTimeString: if not NULL,will save the time string , the format is: 2019-07-31_15:39:29
+	int64 CXConnectionsManager::GetCurrentTimeMS()
+	{
+		typedef chrono::time_point<chrono::system_clock, chrono::milliseconds> MsClockType;
+		MsClockType tp = chrono::time_point_cast<chrono::milliseconds>(chrono::system_clock::now());
+		return (int64)tp.time_since_epoch().count();
+	}
+
+	CXConnectionObject * CXConnectionsManager::GetFreeProxyClient(string strIP, WORD wPort)
+	{
+		CXConnectionObject* pCon = NULL;
+		m_lockFreeConnections.Lock();
+		
+		char szBuf[128] = { 0 };
+		sprintf_s(szBuf, 128, "%s:%d", strIP.c_str(), wPort);
+		unordered_map<string, list<CXConnectionObject *>>::iterator it;
+		it = m_mapDetachedProxyConnectionsPool.find(szBuf);
+		if (it != m_mapDetachedProxyConnectionsPool.end())
+		{
+            bool  bFind = false;
+            do
+            {
+                if (it->second.size() > 0)
+                {
+                    pCon = it->second.front();
+                    it->second.pop_front();
+                    if (pCon->GetState() != CXConnectionObject::ESTABLISHED)
+                    {
+                        if (m_pfOnClose != NULL)
+                        {
+                            char  szInfo[1024] = { 0 };
+                            sprintf_s(szInfo, 1024, "Found a proxy connection is closed,close it, connection index is %lld\n",
+                                pCon->GetConnectionIndex());
+                            if (m_pLogHandle != NULL)
+                                m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+                            m_pfOnClose(*pCon, TIME_OUT);
+                        }
+                    }
+                    else
+                    {
+                        bFind = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            } while (!bFind);
+		}
+
+		if (pCon == NULL)
+		{
+			try
+			{
+				pCon = new CXConnectionObject();
+				if (pCon == NULL)
+				{
+					return NULL;
+				}
+                pCon->SetState(CXConnectionObject::CREATING);
+			}
+			catch (const bad_alloc& e)
+			{
+			}
+		}
+		m_lockFreeConnections.Unlock();
+		return pCon;
+	}
+
+    void CXConnectionsManager::AttachProxyConnection(CXConnectionObject * pObj)
+    {
+        m_lockUsingConnections.Lock();
+        char szBuf[128] = { 0 };
+        sprintf_s(szBuf, 128, "%s:%d", pObj->GetRemoteIP().c_str(), pObj->GetRemotePort());
+        unordered_map<string, unordered_map<uint64, CXConnectionObject *>>::iterator it;
+        it = m_mapAttachProxyConnectionsPool.find(szBuf);
+        if (it != m_mapAttachProxyConnectionsPool.end())
+        {
+            it->second.insert(make_pair(pObj->GetConnectionIndex(), pObj));
+        }
+        else
+        {
+            unordered_map<uint64, CXConnectionObject *>mapProxyCons;
+            mapProxyCons.insert(make_pair(pObj->GetConnectionIndex(), pObj));
+            m_mapAttachProxyConnectionsPool.insert(make_pair(szBuf, mapProxyCons));
+        }
+        m_lockUsingConnections.Unlock();
+    }
+
+    void CXConnectionsManager::DetachProxyConnection(CXConnectionObject * pObj)
+    {
+        m_lockUsingConnections.Lock();
+        char szBuf[128] = { 0 };
+        sprintf_s(szBuf, 128, "%s:%d", pObj->GetRemoteIP().c_str(), pObj->GetRemotePort());
+        unordered_map<string, unordered_map<uint64, CXConnectionObject *>>::iterator it;
+        it = m_mapAttachProxyConnectionsPool.find(szBuf);
+        if (it != m_mapAttachProxyConnectionsPool.end())
+        {
+            m_mapAttachProxyConnectionsPool.erase(it);
+
+            unordered_map<string, list<CXConnectionObject *>>::iterator itDetach;
+            itDetach = m_mapDetachedProxyConnectionsPool.find(szBuf);
+            if (itDetach != m_mapDetachedProxyConnectionsPool.end())
+            {
+                itDetach->second.push_back(pObj);
+            }
+            else
+            {
+                list<CXConnectionObject *> lstDetach;
+                lstDetach.push_back(pObj);
+                m_mapDetachedProxyConnectionsPool[szBuf] = lstDetach;
+            }
+        }
+        m_lockUsingConnections.Unlock();
+    }
 }
 

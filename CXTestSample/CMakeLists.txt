@@ -7,19 +7,36 @@ set (CXTestSample_VERSION_MAJOR 1)
 set (CXTestSample_VERSION_MINOR 0)
 
 
-
 INCLUDE_DIRECTORIES(
 ../CXCommon/include
+../CXEvent/include
+../CXLock/include
+../CXSocketWrapper/include
+../CXMemoryCache/include
+../CXThread/include
+../CXLog/include
+../CXFile/include
+../CXContainer/include
+../CXCommunicationServer/include
+../CXCommunicationClient/include
+../CXDataParser/include
 ../third_libs_source/snappy-1.1.7
 ../third_libs_source/cryptopp820
 ./include
 )
 
-aux_source_directory(src DIR_SRCS)
+
+aux_source_directory(./src DIR_SRCS)
+file (GLOB HEADERS "./include/*.h")
+SET(DIR_SRCS ${DIR_SRCS} ${HEADERS})
+source_group("Header Files" FILES ${HEADERS})
 
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
- SET(option WIN32)
+ #SET(option WIN32)
+ SET(CMAKE_BUILD_TYPE "Debug")
+ SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+ SET(CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
  #set extern libraries
  SET(LIBRARIES
      ws2_32.lib
@@ -50,18 +67,41 @@ SET(EXECUTABLE_OUTPUT_PATH ../../bin)
 #add executable file
 add_executable(CXTestSample ${DIR_SRCS} main.cpp )
 
-TARGET_LINK_LIBRARIES(CXTestSample ${LIBRARIES})
+
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 	TARGET_LINK_LIBRARIES(CXTestSample CXCommon_static.lib)
+    TARGET_LINK_LIBRARIES(CXTestSample CXLock_static.lib)
+    TARGET_LINK_LIBRARIES(CXTestSample CXEvent_static.lib)
+    TARGET_LINK_LIBRARIES(CXTestSample CXSocketWrapper_static.lib)
+    TARGET_LINK_LIBRARIES(CXTestSample CXThread_static.lib)
+    TARGET_LINK_LIBRARIES(CXTestSample CXMemoryCache_static.lib)
+    TARGET_LINK_LIBRARIES(CXTestSample CXLog_static.lib)
+    TARGET_LINK_LIBRARIES(CXTestSample CXFile_static.lib)
+	TARGET_LINK_LIBRARIES(CXTestSample CXContainer_static.lib)
+	TARGET_LINK_LIBRARIES(CXTestSample CXDataParser_static.lib)
+	TARGET_LINK_LIBRARIES(CXTestSample CXCommunicationServer_static.lib)
 	TARGET_LINK_LIBRARIES(CXTestSample cryptlib.lib)
 	TARGET_LINK_LIBRARIES(CXTestSample snappy.lib)
+	TARGET_LINK_LIBRARIES(CXTestSample CXTask_static.lib)
+	TARGET_LINK_LIBRARIES(CXTestSample CXCommunicationClient_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXTestSample libCXCommon.so)
-	TARGET_LINK_LIBRARIES(CXTestSample cryptlib.so)
-	TARGET_LINK_LIBRARIES(CXTestSample snappy.so)
-    
+    TARGET_LINK_LIBRARIES(CXTestSample libCXLock.so)
+    TARGET_LINK_LIBRARIES(CXTestSample libCXEvent.so)
+    TARGET_LINK_LIBRARIES(CXTestSample libCXSocketWrapper.so)
+    TARGET_LINK_LIBRARIES(CXTestSample libCXThread.so)
+    TARGET_LINK_LIBRARIES(CXTestSample libCXMemoryCache.so)
+    TARGET_LINK_LIBRARIES(CXTestSample libCXFile.so)
+    TARGET_LINK_LIBRARIES(CXTestSample libCXLog.so)
+	TARGET_LINK_LIBRARIES(CXTestSample libCXContainer.so)
+    TARGET_LINK_LIBRARIES(CXTestSample uuid)
+    TARGET_LINK_LIBRARIES(CXTestSample libCXDataParser.so)
+	TARGET_LINK_LIBRARIES(CXTestSample libCXTask.so)
+    TARGET_LINK_LIBRARIES(CXTestSample libCXCommunicationClient.so)
+	TARGET_LINK_LIBRARIES(CXTestSample libCXCommunicationServer.so)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
+TARGET_LINK_LIBRARIES(CXTestSample ${LIBRARIES})
 
 
 #TARGET_LINK_LIBRARIES（CXCommunicationClientTest debug 3PDebugLib）

@@ -29,7 +29,7 @@ namespace CXCommunication
         CXSessionLevelBase();
         virtual ~CXSessionLevelBase();
 
-        virtual string GetObjectName() { return "CXConnectionLoginV1"; }
+        virtual string GetObjectClassName() { return "CXConnectionLoginV1"; }
 
         virtual int DispatchMes(PCXMessageData pMes);
 

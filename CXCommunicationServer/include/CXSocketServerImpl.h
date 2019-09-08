@@ -20,11 +20,11 @@ Description£º
 
 #include "CXServerStructDefine.h"
 #include "CXConnectionObject.h"
-
+#include "CXThreadPool.h"
 namespace CXCommunication
 {
     typedef int (*POnReadCallback)(CXConnectionObject& conObj, PCXBufferObj pBufObj,
-        DWORD dwTransDataOfBytes, byte* pbyThreadCache, DWORD dwCacheLen);
+        DWORD dwTransDataOfBytes);
     //typedef int (*POnWriteCallback)(CXConnectionObject &conObj,PCXBufferObj pBufObj,
     //    DWORD dwTransDataOfBytes);
     
@@ -49,6 +49,7 @@ namespace CXCommunication
             //virtual bool SetNonblocking(int sock)=0;
             virtual int Start(unsigned short iListeningPort,int iWaitThreadNum)=0;
             virtual int Stop()=0;
+			virtual CXThread* FindThread(DWORD dwThreadID) = 0;
             bool    IsStarted(){ return m_bStarted;}
             void    SetStarted(bool bStarted){ m_bStarted = bStarted;}
             void    SetOnReadCallbackFun(POnReadCallback pfn){m_pfOnRead= pfn;}
@@ -58,8 +59,7 @@ namespace CXCommunication
             void *  GetServer() { return m_pServer; }
 
             virtual int OnAccept(void *pServer,cxsocket sock, sockaddr_in &addrRemote) = 0;
-            virtual int OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,DWORD dwTransDataOfBytes,
-				byte* pbyThreadCache, DWORD dwCacheLen)=0;
+            virtual int OnRead(CXConnectionObject& conObj, PCXBufferObj pBufObj,DWORD dwTransDataOfBytes)=0;
             virtual int OnWrite(CXConnectionObject& conObj)=0;
             virtual void OnClose(CXConnectionObject& conObj, ConnectionClosedType emClosedType)=0;
 

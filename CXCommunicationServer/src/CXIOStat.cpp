@@ -19,7 +19,7 @@ Description£º
 #include <sstream>
 using namespace CXCommunication;
 
-void* ThreadOutput(void* lpvoid);
+DWORD ThreadOutput(void* lpvoid);
 CXIOStat::CXIOStat()
 {
 	m_pLogHandle = NULL;
@@ -202,7 +202,7 @@ void CXIOStat::Output()
 }
 
 
-void* ThreadOutput(void* lpvoid)
+DWORD ThreadOutput(void* lpvoid)
 {
 	CXIOStat * pServer = (CXIOStat*)lpvoid;
 	pServer->Output();

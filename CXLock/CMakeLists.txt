@@ -6,7 +6,10 @@ PROJECT(CXLock)
 
 INCLUDE_DIRECTORIES( ./include )
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
- SET(option WIN32)
+ #SET(option WIN32)
+ SET(CMAKE_BUILD_TYPE "Debug")
+ SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+ SET(CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
  #SET(win32_LIBRARIES comctl32.lib shlwapi.lib shell32.lib odbc32.lib odbccp32.lib  kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib )
  INCLUDE_DIRECTORIES( ./include/windows )
  message("WINDOWS SYSTEM")
@@ -18,6 +21,9 @@ ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 
 aux_source_directory(./src DIR_SRCS)
+file (GLOB HEADERS "./include/*.h")
+SET(DIR_SRCS ${DIR_SRCS} ${HEADERS})
+source_group("Header Files" FILES ${HEADERS})
 
 SET(LIBRARY_OUTPUT_PATH ../../lib)
 

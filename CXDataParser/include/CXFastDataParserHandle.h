@@ -51,6 +51,9 @@ namespace CXCommunication
 			void SetPrivKey(string strKey) { m_strPrivKey= strKey; }
 			bool SetBlowfishInfo(byte *pbyKey,int iKeyLen,byte *pbyIv,int iIvLen);
 
+			bool LoadRSAKeyFiles(string strPrivateFile,string strPublicFile);
+			bool LoadBlowfishKeyFiles(string strKeyFile, string strIvFile);
+
         protected:
 			int RSAEncryptData(const string &strPubKey, byte *pbyInputBuf, size_t iInputBufLen,
 				byte *pbyOutputBuf, DWORD & dwOutputBufLen, bool bOAEP = true);
@@ -66,6 +69,25 @@ namespace CXCommunication
 				byte *pbyIvData, int iIvDataLen,
 				byte *pbyInputBuf, size_t iInputBufLen,
 				byte *pbyOutputBuf, DWORD & dwOutputBufLen);
+
+			bool ZlibCompressData(int iDeflateLevel,
+				byte *pbyInputBuf, size_t iInputBufLen,
+				byte *pbyOutputBuf, DWORD & dwOutputBufLen);
+
+			bool ZlibUncompressData(int iDeflateLevel,
+				byte *pbyInputBuf, size_t iInputBufLen,
+				byte *pbyOutputBuf, DWORD & dwOutputBufLen);
+
+			bool GzipCompressData(int iDeflateLevel,
+				byte *pbyInputBuf, size_t iInputBufLen,
+				byte *pbyOutputBuf, DWORD & dwOutputBufLen);
+
+			bool GzipUncompressData(int iDeflateLevel,
+				byte *pbyInputBuf, size_t iInputBufLen,
+				byte *pbyOutputBuf, DWORD & dwOutputBufLen);
+
+
+			bool ReadKeyFile(string strFilePathName, string &strOutputContent);
 
         private:
 			string m_strPubKey;

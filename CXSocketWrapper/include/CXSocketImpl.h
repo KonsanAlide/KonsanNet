@@ -31,6 +31,8 @@ namespace CXCommunication
 	private:
 		cxsocket m_sock;
 		bool     m_bBlocking;
+		//==true close the socket in the deconstruction function
+		bool     m_bCloseInDeconstruction;
 
 	public:
 		CXSocketImpl();
@@ -109,6 +111,9 @@ namespace CXCommunication
 
 		virtual int Ioctl(int request, int& arg);
 		virtual int Ioctl(int request, void* arg);
+
+		void    SetCloseInDeconstruction(bool bSet) { m_bCloseInDeconstruction = bSet; }
+		bool    IsCloseInDeconstruction() { return m_bCloseInDeconstruction; }
 
 	};
 }

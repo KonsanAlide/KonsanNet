@@ -19,14 +19,21 @@ INCLUDE_DIRECTORIES(
 ../CXFile/include
 ../CXContainer/include
 ../CXDataParser/include
+../CXCommunicationClient/include
+../CXTask/include
 ./include
 )
 
-aux_source_directory(src DIR_SRCS)
-aux_source_directory(../CXCommon/src DIR_COMMON_SRCS)
+aux_source_directory(./src DIR_SRCS)
+file (GLOB HEADERS "./include/*.h")
+SET(DIR_SRCS ${DIR_SRCS} ${HEADERS})
+source_group("Header Files" FILES ${HEADERS})
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
- SET(option WIN32)
+ #SET(option WIN32)
+ SET(CMAKE_BUILD_TYPE "Debug")
+ SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+ SET(CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
  #set extern libraries
  SET(LIBRARIES
      ws2_32.lib
@@ -36,7 +43,7 @@ ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 SET( CMAKE_CXX_FLAGS "-std=c++11 -O0")
 SET(CMAKE_BUILD_TYPE "Debug")
 SET(LIBRARIES
-     libuuid.so
+     libuuid_static.a
  )
  #SET(defs -DUNICODE -D_UNICODE)
  #INCLUDE_DIRECTORIES( ./include/linux )
@@ -76,6 +83,22 @@ IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXCommunicationServer CXFile_static.lib)
 	TARGET_LINK_LIBRARIES(CXCommunicationServer CXContainer_static.lib)
 	TARGET_LINK_LIBRARIES(CXCommunicationServer CXDataParser_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer CXCommunicationClient_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer CXTask_static.lib)
+	
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXCommon_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXLock_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXEvent_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXSocketWrapper_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXThread_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXMemoryCache_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXLog_static.lib)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXFile_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXContainer_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXDataParser_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXCommunicationClient_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static CXTask_static.lib)
+
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 	TARGET_LINK_LIBRARIES(CXCommunicationServer libCXCommon.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer libCXLock.so)
@@ -88,6 +111,22 @@ ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 	TARGET_LINK_LIBRARIES(CXCommunicationServer libCXContainer.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServer uuid)
 	TARGET_LINK_LIBRARIES(CXCommunicationServer libCXDataParser.so)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer libCXCommunicationClient.so)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer libCXTask.so)
+
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXCommon_static.a)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXLock_static.a)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXEvent_static.a)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXSocketWrapper_static.a)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXThread_static.a)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXMemoryCache_static.a)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXLog_static.a)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXFile_static.a)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXContainer_static.a)
+    TARGET_LINK_LIBRARIES(CXCommunicationServer_static uuid)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXDataParser_static.a)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXCommunicationClient_static.a)
+	TARGET_LINK_LIBRARIES(CXCommunicationServer_static libCXTask_static.a)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 

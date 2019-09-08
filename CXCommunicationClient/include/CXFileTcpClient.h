@@ -60,7 +60,7 @@ namespace CXCommunication
         //notify the peer to modify the size of the received buffer 
         int  SetPeerRecvBufSize(DWORD dwSize);
 
-		virtual string  GetObjectName() { return "CXFileTcpV1"; }
+		virtual string  GetObjectClassName() { return "CXFileTcpV1"; }
 
     private:
     };

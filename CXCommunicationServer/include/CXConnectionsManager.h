@@ -63,7 +63,8 @@ namespace CXCommunication
             void RemovePendingConnection(uint64 uiConIndex);
             void AddFreeConnectionObj(CXConnectionObject * pObj);
 
-            int  AddUsingConnection(CXConnectionObject * pObj);
+            void AddUsingConnection(CXConnectionObject * pObj);
+            CXConnectionObject * FindUsingConnection(uint64 uiConIndex);
 
             uint64 GetCurrentConnectionIndex();
             void Destroy();
@@ -82,15 +83,39 @@ namespace CXCommunication
 
             void ReleaseConnection(CXConnectionObject * pObj);
 
-            void SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
+            void   SetLogHandle(CXLog * handle) { m_pLogHandle = handle; }
             CXLog *GetLogHandle() { return m_pLogHandle; }
 
+			CXConnectionObject * GetProxyClient(string strIP,WORD wPort);
+
+			void   SetObjectPool(void * handle) { m_pObjectPool = handle; }
+			void * GetObjectPool() { return m_pObjectPool; }
+
+			CXConnectionObject * GetFreeProxyClient(string strIP, WORD wPort);
+            void   AttachProxyConnection(CXConnectionObject * pObj);
+            void   DetachProxyConnection(CXConnectionObject * pObj);
+
         protected:
+			void DetectTimeoutConnections();
+			void TravelReleaseList();
+			void DetectRequestTimeout();
+
+			//pszTimeString: if not NULL,will save the time string , the format is: 2019-07-31_15:39:29
+			//return value : the current time 
+			int64  GetCurrentTimeMS();
+
         private:
             unordered_map<uint64, CXConnectionObject *> m_mapPendingConnections;
             unordered_map<uint64, CXConnectionObject *> m_mapUsingConnections;
+
+            // the proxy connections pool
+            unordered_map<string, unordered_map<uint64, CXConnectionObject *>> m_mapAttachProxyConnectionsPool;
+
+			// the detached proxy connections pool, these connections are connecting
+			unordered_map<string, list<CXConnectionObject *>> m_mapDetachedProxyConnectionsPool;
+
             queue<CXConnectionObject *> m_queueFreeConnections;
-            list<CXConnectionObject *> m_listReleasedConnections;
+            list<CXConnectionObject *>  m_listReleasedConnections;
             uint64 m_uiCurrentConnectionIndex;
             CXSpinLock m_lockFreeConnections;
             CXSpinLock m_lockUsingConnections;
@@ -105,6 +130,7 @@ namespace CXCommunication
             CXEvent               m_eveWaitDetect;
             bool                   m_bStarted;
             CXLog                *m_pLogHandle;
+			void                 *m_pObjectPool;
 
     };
 }

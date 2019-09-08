@@ -19,7 +19,11 @@ Description£º
 #include <map>
 #include <chrono>
 #include <ctime>
-
+#ifdef WIN32
+#else
+#include <string.h>
+#endif
+#include "PlatformFunctionDefine.h"
 using namespace std;
 
 namespace CXCommunication

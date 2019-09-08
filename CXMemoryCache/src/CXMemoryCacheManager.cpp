@@ -23,7 +23,7 @@ use to save data blocks of different size.
 #include <math.h>
 #endif
 
-void* ThreadCheckCache(void* lpvoid);
+DWORD ThreadCheckCache(void* lpvoid);
 
 CXMemoryCacheManager::CXMemoryCacheManager(DWORD dwInitCacheNumber, 
     uint64 uiMaxMemorySize, DWORD dwMaxObjectSize)
@@ -511,12 +511,12 @@ int CXMemoryCacheManager::CheckCachePool()
     }
     return iRet;
 }
-void* ThreadCheckCache(void* lpvoid)
+DWORD ThreadCheckCache(void* lpvoid)
 {
     CXMemoryCacheManager *pThis = (CXMemoryCacheManager*)lpvoid;
     if (pThis != NULL)
     {
-        return (void*)pThis->CheckCachePool();
+        return pThis->CheckCachePool();
     }
     return 0;
 }

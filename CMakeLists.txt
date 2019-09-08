@@ -25,12 +25,15 @@ add_subdirectory(CXFile)
 add_subdirectory(CXContainer)
 add_subdirectory(CXMemoryCache)
 add_subdirectory(CXSocketWrapper)
+add_subdirectory(CXDataParser)
+add_subdirectory(CXTask)
 add_subdirectory(CXCommunicationClient)
 add_subdirectory(CXCommunicationServer)
-add_subdirectory(CXDataParser)
 add_subdirectory(CXCommunicationServerTest)
 add_subdirectory(CXCommunicationClientTest)
 add_subdirectory(CXTestSample)
+add_subdirectory(CXProxyServerTest)
+
 
 
 

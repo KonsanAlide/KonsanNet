@@ -35,8 +35,9 @@ using namespace CXCommunication;
 
 CXFileRPCServer::CXFileRPCServer()
 {
-    GetObjectGuid();
+    GetClassGuid();
 	m_strCurrentFilePath = "";
+	m_bContinuousObject = true;
 }
 
 
@@ -50,7 +51,7 @@ int CXFileRPCServer::DispatchMes(PCXMessageData pMes)
 {
     DWORD dwMessageCode = pMes->bodyData.dwMesCode;
     int iReceiveDataLen = pMes->dwDataLen;
-	int iBodyBufSize = pMes->dwDataLen-sizeof(CXPacketBodyData)-1;
+	
     CXConnectionObject *pCon = (CXConnectionObject*)pMes->pConObj;
     if (pCon == NULL)
     {
@@ -73,7 +74,7 @@ int CXFileRPCServer::DispatchMes(PCXMessageData pMes)
         PCXCommonMessageReply pReply = (PCXCommonMessageReply)bySendBuf;
         pReply->dwReplyCode = 200;
         dwSendMesLen = sizeof(CXCommonMessageReply);
-        bool bRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_HEAERT_BEAT_REPLY_CODE);
+        bool bRet = pCon->SendPacket(bySendBuf,dwSendMesLen, CX_HEAERT_BEAT_REPLY_CODE, pMes);
         if (!bRet)
         {
 			iProcessRet =-2;
@@ -81,23 +82,23 @@ int CXFileRPCServer::DispatchMes(PCXMessageData pMes)
         break;
     }
     case CX_FILE_OPEN_CODE:
-		iProcessRet = OpenFile((PCXFileOpenFile)pMes->bodyData.buf, iBodyBufSize,pCon);
+		iProcessRet = OpenFile(pMes,pCon);
 		break;
     case CX_FILE_SEEK_CODE:
-		iProcessRet = Seek((PCXFileSeek)pMes->bodyData.buf, iBodyBufSize, pCon);
+		iProcessRet = Seek(pMes, pCon);
         break;
     case CX_FILE_READ_CODE:
-		iProcessRet = Read((PCXFileRead)pMes->bodyData.buf, iBodyBufSize, pCon);
+		iProcessRet = Read(pMes, pCon);
 		break;
     break;
     case CX_FILE_WRITE_CODE:
-		iProcessRet = Write((PCXFileWrite)pMes->bodyData.buf, iBodyBufSize, pCon);
+		iProcessRet = Write(pMes, pCon);
         break;
     case CX_FILE_CLOSE_CODE:
-		iProcessRet = CloseFile((PCXFileClose)pMes->bodyData.buf, iBodyBufSize, pCon);
+		iProcessRet = CloseFile(pMes, pCon);
         break;
     case CX_FILE_GET_LENGTH_CODE:
-		iProcessRet = GetFileLength(pCon);
+		iProcessRet = GetFileLength(pMes,pCon);
     default:
         break;
     }
@@ -105,9 +106,10 @@ int CXFileRPCServer::DispatchMes(PCXMessageData pMes)
     return iProcessRet;
 }
 
+
 CXRPCObjectServer* CXFileRPCServer::CreateObject()
 {
-    return (CXRPCObjectServer*)new CXFileRPCServer;
+    return (CXRPCObjectServer*)new CXFileRPCServer();
 }
 
 int CXFileRPCServer::SendData(CXConnectionObject * pCon, const byte *pbyData,
@@ -122,16 +124,18 @@ void CXFileRPCServer::Destroy()
     {
         m_file.Close();
     }
+	m_strCurrentFilePath = "";
+	Reset();
 }
 
 void CXFileRPCServer::MessageToString(PCXMessageData pMes, string &strMes)
 {
 	char  szInfo[1024] = { 0 };
 	CXGuidObject guidObj(false);
-	string strPacketGUID = guidObj.ConvertGuid(pMes->bodyData.byPacketGuid);
+	string strRequestID = guidObj.ConvertGuid(pMes->bodyData.byRequestID);
 
 	sprintf_s(szInfo, 1024, "file message, packet_guid:%s,message_code:%04d,message_length:%d",
-		strPacketGUID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
+        strRequestID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
 	strMes = szInfo;
 
 	switch (pMes->bodyData.dwMesCode)
@@ -203,20 +207,24 @@ void CXFileRPCServer::MessageToString(PCXMessageData pMes, string &strMes)
 }
 
 
-int CXFileRPCServer::OpenFile(PCXFileOpenFile pData, DWORD dwDataLen, CXConnectionObject *pCon)
+int CXFileRPCServer::OpenFile(PCXMessageData pMes,CXConnectionObject *pCon)
 {
+	PCXFileOpenFile pData = (PCXFileOpenFile)pMes->bodyData.buf;
+	DWORD dwDataLen = pMes->dwDataLen - (sizeof(CXPacketBodyData) - 1);
 	DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
 	byte  bySendBuf[1024] = { 0 };
 	CXFile64 *pFile = NULL;
     char  szInfo[1024] = { 0 };
 
 	PCXCommonMessageReply pReply = (PCXCommonMessageReply)bySendBuf;
+	DWORD dwLeftDataLen = 1024 - sizeof(CXCommonMessageReply) - 1;
 
 	while (true)
 	{
 		if (pData->dwFilePathLen <= 0 || pData->dwFilePathLen > dwDataLen)
 		{
 			pReply->dwReplyCode = 201;
+			pReply->dwDataLen = 0;
 			break;
 		}
 
@@ -240,7 +248,7 @@ int CXFileRPCServer::OpenFile(PCXFileOpenFile pData, DWORD dwDataLen, CXConnecti
 			strcpy(pReply->szData, pszError);
 			pReply->dwDataLen = strlen(pszError) + 1;
 
-            sprintf_s(szInfo, 1024, "Failed to open file %s , open type is %d,error code is %d, error description is %s\n",
+            sprintf_s(szInfo, dwLeftDataLen, "Failed to open file %s , open type is %d,error code is %d, error description is %s\n",
                 pData->szFilePath, pData->byOpenType,dwEr, pszError);
             m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
 
@@ -256,16 +264,19 @@ int CXFileRPCServer::OpenFile(PCXFileOpenFile pData, DWORD dwDataLen, CXConnecti
 		break;
 	}
 
-	dwSendMesLen = sizeof(CXCommonMessageReply);
-	int  iSendRet = SendPacket(bySendBuf, dwSendMesLen, CX_FILE_OPEN_REPLY_CODE,pCon);
-	if (iSendRet!=0)
+	dwSendMesLen = sizeof(CXCommonMessageReply)-1+ pReply->dwDataLen;
+	bool bSentRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_FILE_OPEN_REPLY_CODE,pMes);
+	if (!bSentRet)
 	{
 		return -2;
 	}
 	return RETURN_SUCCEED;
 }
-int CXFileRPCServer::CloseFile(PCXFileClose pData, DWORD dwDataLen, CXConnectionObject *pCon)
+int CXFileRPCServer::CloseFile(PCXMessageData pMes,CXConnectionObject *pCon)
 {
+	PCXFileClose pData = (PCXFileClose)pMes->bodyData.buf;
+    DWORD dwDataLen = pMes->dwDataLen - (sizeof(CXPacketBodyData) - 1);
+
 	DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
 	byte  bySendBuf[1024] = { 0 };
 
@@ -282,16 +293,19 @@ int CXFileRPCServer::CloseFile(PCXFileClose pData, DWORD dwDataLen, CXConnection
 	//m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
 
 	pReply->dwReplyCode = 200;
-		
-	int  iSendRet = SendPacket(bySendBuf, dwSendMesLen, CX_FILE_CLOSE_REPLY_CODE, pCon);
-	if (iSendRet != 0)
+	dwSendMesLen = sizeof(CXCommonMessageReply) + pReply->dwDataLen;
+	bool bSentRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_FILE_CLOSE_REPLY_CODE, pMes);
+	if (!bSentRet)
 	{
 		return -2;
 	}
 	return RETURN_SUCCEED;
 }
-int CXFileRPCServer::Write(PCXFileWrite pData, DWORD dwDataLen, CXConnectionObject *pCon)
+int CXFileRPCServer::Write(PCXMessageData pMes, CXConnectionObject *pCon)
 {
+	PCXFileWrite pData = (PCXFileWrite)pMes->bodyData.buf;
+    DWORD dwDataLen = pMes->dwDataLen - (sizeof(CXPacketBodyData) - 1);
+
 	DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
 	byte  bySendBuf[1024] = { 0 };
 
@@ -306,7 +320,7 @@ int CXFileRPCServer::Write(PCXFileWrite pData, DWORD dwDataLen, CXConnectionObje
 			strcpy(pReply->szData, "The file is closed!\n");
 			pReply->dwDataLen = strlen(pReply->szData) + 1;
 			m_pLogHandle->Log(CXLog::CXLOG_ERROR, pReply->szData);
-			pReply->dwReplyCode = 503;
+			pReply->dwReplyCode = 412;
 			break;
 		}
 
@@ -351,16 +365,19 @@ int CXFileRPCServer::Write(PCXFileWrite pData, DWORD dwDataLen, CXConnectionObje
 		pReply->dwReplyCode = 200;
 		break;
 	}
-
-	int iSendRet = SendPacket(bySendBuf, dwSendMesLen, CX_FILE_WRITE_REPLY_CODE, pCon);
-	if (iSendRet != 0)
+	dwSendMesLen = sizeof(CXCommonMessageReply) + pReply->dwDataLen;
+	bool bSentRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_FILE_WRITE_REPLY_CODE, pMes);
+	if (!bSentRet)
 	{
 		return -2;
 	}
 	return RETURN_SUCCEED;
 }
-int CXFileRPCServer::Read(PCXFileRead pData, DWORD dwDataLen, CXConnectionObject *pCon)
+int CXFileRPCServer::Read(PCXMessageData pMes, CXConnectionObject *pCon)
 {	
+	PCXFileRead pData = (PCXFileRead)pMes->bodyData.buf;
+    DWORD dwDataLen = pMes->dwDataLen - (sizeof(CXPacketBodyData) - 1);
+
 	byte  bySendBuf[1024] = { 0 };
 	PCXFileReadReply pReply = (PCXFileReadReply)bySendBuf;
 	DWORD dwSendMesLen = sizeof(CXFileReadReply) - 1;
@@ -374,9 +391,10 @@ int CXFileRPCServer::Read(PCXFileRead pData, DWORD dwDataLen, CXConnectionObject
 		{
 			pReply->dwReplyCode = 201;
 			bNotReadFromFle = true;
-			char  szInfo[1024] = { 0 };
-			sprintf_s(szInfo, 1024, "Failed to read data,the need read length %d is a invalid value",pData->dwReadLen);
-			m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+			sprintf_s(pReply->szData, dwLeftDataLen, "Failed to read data,the need read length %d is a invalid value", pData->dwReadLen);
+			pReply->dwDataLen = strlen(pReply->szData) + 1;
+
+			m_pLogHandle->Log(CXLog::CXLOG_ERROR, pReply->szData);
 			break;
 		}
 
@@ -391,14 +409,25 @@ int CXFileRPCServer::Read(PCXFileRead pData, DWORD dwDataLen, CXConnectionObject
 		}
 
 		int iBufLen = pData->dwReadLen + sizeof(CXFileReadReply) - 1;
-		byte *pBufSend = (byte*)pCon->GetBuffer(iBufLen);
-		if (pBufSend == NULL)
+        bool bGetBuf = false;
+        byte *pBufSend = NULL;
+		//this buffer not need to free in this function, that will be free by the SendPacket function
+        PCXBufferObj pCXBuf = pCon->GetSendCXBufferObj(iBufLen);
+        if (pCXBuf != NULL)
+        {
+            pBufSend = pCon->GetWritableBuffer(pCXBuf);
+            if (pBufSend != NULL)
+            {
+                bGetBuf = true;
+            }
+        }
+		if (!bGetBuf)
 		{
 			pReply->dwReplyCode = 203;
 			bNotReadFromFle = true;
-			char  szInfo[1024] = { 0 };
-			sprintf_s(szInfo, 1024, "Failed to read data,an error occur in allocating memory %d bytes", iBufLen);
-			m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+			sprintf_s(pReply->szData, dwLeftDataLen, "Failed to read data,an error occur in allocating memory %d bytes", iBufLen);
+			pReply->dwDataLen = strlen(pReply->szData) + 1;
+			m_pLogHandle->Log(CXLog::CXLOG_ERROR, pReply->szData);
 			break;
 		}
 		pReply = (PCXFileReadReply)pBufSend;
@@ -465,9 +494,8 @@ int CXFileRPCServer::Read(PCXFileRead pData, DWORD dwDataLen, CXConnectionObject
 		}
 
 		dwSendMesLen = pReply->dwDataLen + sizeof(CXFileReadReply) - 1;
-		int iSendRet = SendPacket(pBufSend, dwSendMesLen, CX_FILE_READ_REPLY_CODE, pCon);
-		pCon->FreeBuffer(pBufSend);
-		if (iSendRet != 0)
+		bool bSentRet = pCon->SendPacket(pCXBuf, dwSendMesLen, CX_FILE_READ_REPLY_CODE, pMes);
+		if (!bSentRet)
 		{
 			char  szInfo[1024] = { 0 };
 			sprintf_s(szInfo, 1024, "Failed to sent data, need send is %d,had sent %d,connection index is %lld\n",
@@ -481,9 +509,9 @@ int CXFileRPCServer::Read(PCXFileRead pData, DWORD dwDataLen, CXConnectionObject
 
 	if (bNotReadFromFle)
 	{
-		dwSendMesLen = sizeof(CXFileReadReply);
-		int iSendRet = SendPacket(bySendBuf, dwSendMesLen, CX_FILE_OPEN_REPLY_CODE, pCon);
-		if (iSendRet != 0)
+		dwSendMesLen = pReply->dwDataLen + sizeof(CXFileReadReply)-1;
+		bool bSentRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_FILE_READ_REPLY_CODE, pMes);
+		if (!bSentRet)
 		{
 			return -2;
 		}
@@ -492,8 +520,11 @@ int CXFileRPCServer::Read(PCXFileRead pData, DWORD dwDataLen, CXConnectionObject
 	return RETURN_SUCCEED;
 }
 
-int CXFileRPCServer::Seek(PCXFileSeek pData, DWORD dwDataLen, CXConnectionObject *pCon)
+int CXFileRPCServer::Seek(PCXMessageData pMes, CXConnectionObject *pCon)
 {
+	PCXFileSeek pData = (PCXFileSeek)pMes->bodyData.buf;
+    DWORD dwDataLen = pMes->dwDataLen - (sizeof(CXPacketBodyData) - 1);
+
 	DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
 	byte  bySendBuf[1024] = { 0 };
     char  szInfo[1024] = { 0 };
@@ -510,7 +541,7 @@ int CXFileRPCServer::Seek(PCXFileSeek pData, DWORD dwDataLen, CXConnectionObject
 			strcpy(pReply->szData, "The file is closed!\n");
 			pReply->dwDataLen = strlen(pReply->szData) + 1;
 			m_pLogHandle->Log(CXLog::CXLOG_ERROR, pReply->szData);
-			pReply->dwReplyCode = 503;
+			pReply->dwReplyCode = 412;
 			break;
 		}
 
@@ -534,16 +565,16 @@ int CXFileRPCServer::Seek(PCXFileSeek pData, DWORD dwDataLen, CXConnectionObject
 		pReply->dwReplyCode = 200;
 		break;
 	}
-
-	int iSendRet = SendPacket(bySendBuf, dwSendMesLen, CX_FILE_SEEK_REPLY_CODE, pCon);
-	if (iSendRet != 0)
+	dwSendMesLen = pReply->dwDataLen + sizeof(CXCommonMessageReply)-1;
+	bool bSentRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_FILE_SEEK_REPLY_CODE, pMes);
+	if (!bSentRet)
 	{
 		return -2;
 	}
 	return RETURN_SUCCEED;
 }
 
-int CXFileRPCServer::GetFileLength(CXConnectionObject *pCon)
+int CXFileRPCServer::GetFileLength(PCXMessageData pMes,CXConnectionObject *pCon)
 {
 	DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
 	byte  bySendBuf[1024] = { 0 };
@@ -557,7 +588,7 @@ int CXFileRPCServer::GetFileLength(CXConnectionObject *pCon)
 			strcpy(pReply->szData, "The file is closed!\n");
 			pReply->dwDataLen = strlen(pReply->szData) + 1;
 			m_pLogHandle->Log(CXLog::CXLOG_ERROR, pReply->szData);
-			pReply->dwReplyCode = 503;
+			pReply->dwReplyCode = 412;
 			break;
 		}
 
@@ -575,9 +606,10 @@ int CXFileRPCServer::GetFileLength(CXConnectionObject *pCon)
 
 		break;
 	}
-	dwSendMesLen = sizeof(CXCommonMessageReply);
-    int iSendRet = SendPacket(bySendBuf, dwSendMesLen, CX_FILE_GET_LENGTH_REPLY_CODE, pCon);
-	if (iSendRet!=0)
+
+	dwSendMesLen = pReply->dwDataLen + sizeof(CXCommonMessageReply)-1;
+	bool bSentRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_FILE_GET_LENGTH_REPLY_CODE, pMes);
+	if (!bSentRet)
 	{
 		return -2;
 	}
@@ -585,7 +617,7 @@ int CXFileRPCServer::GetFileLength(CXConnectionObject *pCon)
 	return RETURN_SUCCEED;
 }
 
-int CXFileRPCServer::GetCurrentFilePosition(CXConnectionObject *pCon)
+int CXFileRPCServer::GetCurrentFilePosition(PCXMessageData pMes,CXConnectionObject *pCon)
 {
     DWORD dwSendMesLen = sizeof(CXCommonMessageReply);
     byte  bySendBuf[1024] = { 0 };
@@ -601,7 +633,7 @@ int CXFileRPCServer::GetCurrentFilePosition(CXConnectionObject *pCon)
 			strcpy(pReply->szData, "The file is closed!\n");
 			pReply->dwDataLen = strlen(pReply->szData) + 1;
 			m_pLogHandle->Log(CXLog::CXLOG_ERROR, pReply->szData);
-			pReply->dwReplyCode = 503;
+			pReply->dwReplyCode = 412;
 			break;
 		}
   
@@ -628,9 +660,9 @@ int CXFileRPCServer::GetCurrentFilePosition(CXConnectionObject *pCon)
 
         break;
     }
-    dwSendMesLen = sizeof(CXCommonMessageReply);
-    int iSendRet = SendPacket(bySendBuf, dwSendMesLen, CX_FILE_GET_CUR_POS_REPLY_CODE, pCon);
-    if (iSendRet != 0)
+	dwSendMesLen = pReply->dwDataLen + sizeof(CXCommonMessageReply)-1;
+	bool bSentRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_FILE_GET_CUR_POS_REPLY_CODE, pMes);
+    if (!bSentRet)
     {
         return -2;
     }
@@ -638,13 +670,3 @@ int CXFileRPCServer::GetCurrentFilePosition(CXConnectionObject *pCon)
     return RETURN_SUCCEED;
 }
 
-int CXFileRPCServer::SendPacket(const byte* pbData, DWORD dwLen, 
-    DWORD dwMesCode, CXConnectionObject *pCon)
-{
-	bool bRet = pCon->SendPacket(pbData, dwLen, dwMesCode);
-	if (!bRet)
-	{
-		return -2;
-	}
-	return 0;
-}

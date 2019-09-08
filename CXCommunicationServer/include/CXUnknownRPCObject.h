@@ -29,7 +29,7 @@ namespace CXCommunication
 		CXUnknownRPCObject();
         virtual ~CXUnknownRPCObject();
 
-        virtual string GetObjectName() { return "CXUnknownObjectV1"; }
+        virtual string GetObjectClassName() { return "CXUnknownObjectV1"; }
 
         virtual int DispatchMes(PCXMessageData pMes);
 

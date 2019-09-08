@@ -30,6 +30,8 @@ typedef struct _CX_SESSION_LOGIN
     //==3 data transmission session
     //==4 object RPC session
     DWORD dwSessionType;
+	//==0 user name and password authentication
+	//==1 key authentication
     byte  byUserType;
     //==1 major message connection
     //==2 minor messsage connection

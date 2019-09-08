@@ -78,6 +78,15 @@ typedef struct _CX_FILE_CLOSE
 }CXFileClose, *PCXFileClose;
 #endif
 
+#ifndef _CX_FILE_COMMAND
+typedef struct _CX_FILE_COMMAND
+{
+	DWORD  dwType;
+	DWORD  dwDataLen;
+	char   szData[1];
+}CXFileCommand , *PCXFileCommand;
+#endif
+
 
 #pragma pack()
 

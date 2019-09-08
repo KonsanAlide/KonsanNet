@@ -22,8 +22,9 @@ Description£º
 #include <windows.h>
 #else
 #include  <unistd.h>
-#include  <sys/types.h> 
+#include  <sys/types.h>
 #include <pthread.h>
+#include <semaphore.h>
 #endif // WIN32
 
 #include "../../CXCommon/include/PlatformDataTypeDefine.h"
@@ -32,6 +33,7 @@ Description£º
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+
 
 using namespace std;
 
@@ -55,12 +57,11 @@ class CXEvent
 #ifdef WIN32
         HANDLE m_hEvent;
 #else
-        pthread_cond_t m_condEvent;
-        pthread_mutex_t m_mutexEvent;
+        sem_t  m_hEvent;
 #endif // WIN32
-        
 
-        
+
+
 };
 
 #endif // CXEVENT_H

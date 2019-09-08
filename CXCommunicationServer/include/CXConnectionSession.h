@@ -60,26 +60,32 @@ namespace CXCommunication
             int AddDataConnection(CXConnectionObject &conObj);
             int AddObjectConnection(CXConnectionObject &conObj);
 
-            int RemoveConnection(CXConnectionObject &conObj);
+            int    RemoveConnection(CXConnectionObject &conObj);
             string GetSessionGuid() { return m_strSessionGuid; }
             void   SetSesssionGuid(string strGuid) { m_strSessionGuid= strGuid; }
             string GetVerificationCode() { return m_strVerificationCode; }
 
-            void Destroy();
+            void   Destroy();
 
-            void SetData(string strKey,void *pData,bool bLockBySelf=true);
-            void *GetData(string strKey,bool bLockBySelf=true);
-            void RemoveData(string strKey,bool bLockBySelf=true);
+			//add a object in the session
+            void   AddObject(string strObjectID,void *pObj,bool bLockBySelf=true);
+			//get the object in the session
+            void*  FindObject(string strObjectID,bool bLockBySelf=true);
+			//remove a object
+            void   RemoveObject(string strObjectID,bool bLockBySelf=true);
 
-            int  GetConnectionNumber();
+            int    GetConnectionNumber();
 
-            void ResetVerificationInfo();
+            void   ResetVerificationInfo();
 
             //verify the verification code
             //==0 succeed
             //==-1 the verification code not match
             //==-2 the verification code is time out
-            int    VerifyCode(string strCode);
+            int   VerifyCode(string strCode);
+
+			void  SetObjectPool(void *pPool) { m_pObjectsPool = pPool; }
+			void* GetObjectPool() { return m_pObjectsPool; }
 
         protected:
         private:
@@ -88,11 +94,14 @@ namespace CXCommunication
             list<CXConnectionObject*> m_lstDataConnections;
             list<CXConnectionObject*> m_lstObjectConnections;
             CXSpinLock m_lock;
-            string m_strSessionGuid;
-            string m_strVerificationCode;
-            unordered_map<string, void*> m_mapData;
-            time_t m_tmBeginOfVerification;
-            int    m_iTimeOutSecondsOfVerification;
+            string     m_strSessionGuid;
+            string     m_strVerificationCode;
+			//key: the object id
+			//value: object pointer
+            unordered_map<string, void*> m_mapObjects;
+            time_t     m_tmBeginOfVerification;
+            int        m_iTimeOutSecondsOfVerification;
+			void      *m_pObjectsPool;
 
     };
 }

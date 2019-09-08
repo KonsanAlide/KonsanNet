@@ -28,7 +28,7 @@ namespace CXCommunication
         CXSessionLoginRPCServer();
         ~CXSessionLoginRPCServer();
 
-        virtual string GetObjectName() { return "CXSessionLoginV10001"; }
+        virtual string GetObjectClassName() { return "CXSessionLoginV10001"; }
 
         virtual CXRPCObjectServer* CreateObject();
 

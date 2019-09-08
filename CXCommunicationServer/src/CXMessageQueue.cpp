@@ -38,7 +38,6 @@ void CXMessageQueue::PushMessage(void*pMes)
 
 void* CXMessageQueue::GetMessage()
 {
-    
     if (m_queue.Size() > 0)
     {
         m_lock.Lock();

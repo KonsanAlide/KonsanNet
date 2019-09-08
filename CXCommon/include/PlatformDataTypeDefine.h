@@ -21,12 +21,14 @@ Description£ºThis file contain the related definitions about the socket,
 #ifndef __PLATFORMDATATYPEDEFINE_H__
 #define __PLATFORMDATATYPEDEFINE_H__
 
+#include "CXErrorCode.h"
+
 #define CX_BUF_SIZE 4096
 #define CLIENT_BUF_SIZE 4096
 #define CX_GUID_LEN 16
 
 //10MB
-#define CX_MAX_CHACHE_SIZE 10485760
+#define CX_MAX_CHACHE_SIZE 1048576
 
 #ifdef WIN32
 #ifndef byte
@@ -34,8 +36,12 @@ typedef unsigned char      byte;
 #endif
 typedef __int64            int64;
 typedef unsigned __int64   uint64;
+
 #define RETURN_SUCCEED     0
 #define INVALID_PARAMETER  -1
+//this function had enter a asynchronous process,
+//this asynchronous process will return in other way.
+#define ASYNC_CALLBACK     -1000
 
 #else
 #include <inttypes.h>
@@ -79,6 +85,7 @@ typedef uint64_t    uint64;
 
 #define RETURN_SUCCEED 0
 #define INVALID_PARAMETER -1
+#define ASYNC_CALLBACK     -1000
 
 #ifndef NULL
 #define NULL 0

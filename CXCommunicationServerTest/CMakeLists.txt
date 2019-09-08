@@ -16,11 +16,14 @@ INCLUDE_DIRECTORIES(
 ../CXContainer/include
 ../CXCommunicationServer/include
 ../CXDataParser/include
+../CXTask/include
 ./include
 )
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
- SET(option WIN32)
+ #SET(option WIN32)
+ SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+ SET(CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
  #set extern libraries
  SET(LIBRARIES
      ws2_32.lib
@@ -28,12 +31,13 @@ IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
  message("WINDOWS SYSTEM")
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 SET(CMAKE_CXX_FLAGS "-std=c++11 -O0")
-SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
-SET(CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
 SET(CMAKE_BUILD_TYPE "Debug")
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
-aux_source_directory(src DIR_SRCS)
+aux_source_directory(./src DIR_SRCS)
+file (GLOB HEADERS "./include/*.h")
+SET(DIR_SRCS ${DIR_SRCS} ${HEADERS})
+source_group("Header Files" FILES ${HEADERS})
 
 
 #SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
@@ -43,7 +47,7 @@ IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 	LINK_DIRECTORIES(../../third_libs/i386/windows/debug)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     LINK_DIRECTORIES(../../lib)
-	LINK_DIRECTORIES(../../third_libs/i386/linux)
+	LINK_DIRECTORIES(../../third_libs/x64/linux)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 SET(EXECUTABLE_OUTPUT_PATH ../../bin)
@@ -65,6 +69,8 @@ IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 	TARGET_LINK_LIBRARIES(CXCommunicationServerTest CXCommunicationServer_static.lib)
 	TARGET_LINK_LIBRARIES(CXCommunicationServerTest cryptlib.lib)
 	TARGET_LINK_LIBRARIES(CXCommunicationServerTest snappy.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServerTest CXTask_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationServerTest CXCommunicationClient_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXCommon.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXLock.so)
@@ -72,12 +78,14 @@ ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXSocketWrapper.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXThread.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXMemoryCache.so)
-    TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXLog.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXFile.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXLog.so)
 	TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXContainer.so)
     TARGET_LINK_LIBRARIES(CXCommunicationServerTest uuid)
+    TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXDataParser.so)
+	TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXTask.so)
+    TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXCommunicationClient.so)
 	TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXCommunicationServer.so)
-	TARGET_LINK_LIBRARIES(CXCommunicationServerTest libCXDataParser.so)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 

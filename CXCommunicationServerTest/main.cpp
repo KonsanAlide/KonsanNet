@@ -9,6 +9,7 @@
 #include "CXSessionLevelBase.h"
 #include "PlatformFunctionDefine.h"
 #include "CXUnknownRPCObject.h"
+#include "CXStorageRPCServer.h"
 
 using namespace std;
 using namespace CXCommunication;
@@ -26,7 +27,7 @@ CXCommunicationServer server;
 
 bool g_bRunning = false;
 string g_strLocalPath = "";
-void* ThreadCount(void* lpvoid)
+DWORD ThreadCount(void* lpvoid)
 {
     //server.WaitThreadsExit();
     uint64 uiLastConnectionNumber = 0;
@@ -67,6 +68,19 @@ int main()
     g_strLocalPath.append(szDir);
 #else
     g_strLocalPath = "./" ;
+    char szPath[1024] = {0};
+
+    int ret =  readlink("/proc/self/exe", szPath, sizeof(szPath)-1 );
+    if(ret>0)
+    {
+        g_strLocalPath = szPath;
+        size_t iPos = g_strLocalPath.rfind('/');
+        if(iPos!=string::npos)
+        {
+            g_strLocalPath = g_strLocalPath.substr(0,iPos+1);
+            printf("%s\n",g_strLocalPath.c_str());
+        }
+    }
 #endif
 
     if (g_strLocalPath == "")
@@ -89,86 +103,6 @@ int main()
 		return -2;
 	}
 
-	string strPrivKey = "";
-	CXFile64 filePrivKey;
-	if (filePrivKey.Open(g_strLocalPath + "privateKey.conf",CXFile64::modeRead))
-	{
-		UINT64 iKeyLen = 0;
-		filePrivKey.GetFileLength(iKeyLen);
-		iKeyLen++;
-		char *pszKeyData = new char[iKeyLen];
-		if (pszKeyData != NULL)
-		{
-			memset(pszKeyData, 0, iKeyLen);
-			DWORD dwReadLen = 0;
-			if (filePrivKey.Read((byte*)pszKeyData, iKeyLen, dwReadLen))
-			{
-				strPrivKey = pszKeyData;
-			}
-			delete[]pszKeyData;
-		}
-		filePrivKey.Close();
-	}
-
-    string strPubKey = "";
-    CXFile64 fileKey;
-    if (fileKey.Open(g_strLocalPath + "pubKey.conf", CXFile64::modeRead))
-    {
-        UINT64 iKeyLen = 0;
-        fileKey.GetFileLength(iKeyLen);
-        iKeyLen++;
-        char *pszKeyData = new char[iKeyLen];
-        if (pszKeyData != NULL)
-        {
-            memset(pszKeyData, 0, iKeyLen);
-            DWORD dwReadLen = 0;
-            if (fileKey.Read((byte*)pszKeyData, iKeyLen, dwReadLen))
-            {
-                strPubKey = pszKeyData;
-            }
-            delete[]pszKeyData;
-        }
-        fileKey.Close();
-    }
-
-	byte   m_byKey[128] = {0};
-	byte   m_byIv[128] = { 0 };
-	int    m_iKeyLen = 0;
-	int    m_iIvLen = 0;
-
-	CXFile64 file;
-	if (file.Open(g_strLocalPath + "key.conf", CXFile64::modeRead))
-	{
-		UINT64 iKeyLen = 0;
-		file.GetFileLength(iKeyLen);
-		iKeyLen++;
-		if (iKeyLen < 128)
-		{
-			DWORD dwReadLen = 0;
-			if (file.Read(m_byKey, iKeyLen, dwReadLen))
-			{
-				m_iKeyLen = dwReadLen;
-			}
-		}
-		file.Close();
-	}
-
-	if (file.Open(g_strLocalPath + "iv.conf", CXFile64::modeRead))
-	{
-		UINT64 iKeyLen = 0;
-		file.GetFileLength(iKeyLen);
-		iKeyLen++;
-		if (iKeyLen < 128)
-		{
-			DWORD dwReadLen = 0;
-			if (file.Read(m_byIv, iKeyLen, dwReadLen))
-			{
-				m_iIvLen = dwReadLen;
-			}
-		}
-		file.Close();
-	}
-
 
 #ifdef WIN32
 	CoInitialize(NULL);
@@ -176,23 +110,25 @@ int main()
 
     
 	CXFastDataParserHandle dataParserHandle;
-	dataParserHandle.SetPrivKey(strPrivKey);
-    dataParserHandle.SetPubKey(strPubKey);
-	dataParserHandle.SetBlowfishInfo(m_byKey, m_iKeyLen, m_byIv, m_iIvLen);
+	dataParserHandle.LoadRSAKeyFiles(g_strLocalPath + "privateKey.conf", g_strLocalPath + "pubKey.conf");
+	dataParserHandle.LoadBlowfishKeyFiles(g_strLocalPath + "key.conf", g_strLocalPath + "iv.conf");
 
     CXFileRPCServer fileRPCServerObj;
-    server.Register(fileRPCServerObj.GetGuid(),(CXRPCObjectServer*)&fileRPCServerObj);
+    server.Register(fileRPCServerObj.GetClassID(),(CXRPCObjectServer*)&fileRPCServerObj);
+
+    CXStorageRPCServer fileStorage;
+	server.Register(fileStorage.GetClassID(), (CXRPCObjectServer*)&fileStorage);
 
     CXSessionLevelBase sessionLoginHandle;
-    server.Register(sessionLoginHandle.GetGuid(), (CXRPCObjectServer*)&sessionLoginHandle);
+    server.Register(sessionLoginHandle.GetClassID(), (CXRPCObjectServer*)&sessionLoginHandle);
 
 	CXUnknownRPCObject unknownObj;
-	server.Register(unknownObj.GetGuid(),(CXRPCObjectServer*)&unknownObj);
+	server.Register(unknownObj.GetClassID(),(CXRPCObjectServer*)&unknownObj);
 
     server.SetDataParserHandle(&dataParserHandle);
     server.SetLogHandle(&m_logHandle);
 	server.SetJournalLogHandle(&m_logJouralHandle);
-    int iRet = server.Start(4355, 8);
+    int iRet = server.Start(4354, 8);
     if(iRet !=0)
     {
         sprintf_s(szInfo, 1024, "Failed to start communication server, return value is %d\n",iRet);
@@ -213,7 +149,6 @@ int main()
     g_bRunning = true;
     CXThread threadCount;
     threadCount.Start(ThreadCount,NULL);
-
 
 
     cin.get();

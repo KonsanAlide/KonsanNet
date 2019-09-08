@@ -15,8 +15,8 @@ limitations under the License.
 
 Description£º
 *****************************************************************************/
-#ifndef CXEPOLLSERVERKERNEL_H
-#define CXEPOLLSERVERKERNEL_H
+#ifndef __CXTHREAD_H__
+#define __CXTHREAD_H__
 
 #ifdef WIN32  
 #include <Windows.h>  
@@ -25,46 +25,98 @@ Description£º
 #include <pthread.h>  
 #endif  //WIN32  
 
-#include "../../CXCommon/include/PlatformDataTypeDefine.h" 
+#include "PlatformDataTypeDefine.h" 
+#include "CXEvent.h"
 
 //the thread main runing function
-typedef void* (*RunFun)(void *);
+typedef DWORD (*RunFun)(void *);
 class CXThread
 {
+public:
+	enum CXTHREAD_STATE
+	{
+		CXTHREAD_STATE_FREE = 0,
+		CXTHREAD_STATE_RUNNING,
+		CXTHREAD_STATE_DESTROYED,
+		CXTHREAD_STATE_DEAD,
+	};
 public:
     CXThread();
     virtual ~CXThread();
 
-    //start the thread
-    int   Start(RunFun funThread, void *pThreadPara);
+	//create thread
+	bool  Create();
+	//stop the thread task and terminal the thread
+	void  Destroy();
 
-    //stop the thread 
+    //start the thread task 
+    int   Start(RunFun funTask, void *pTaskPara);
+
+    //stop the thread task and terminal the thread
     void  Stop();
 
-    // wait the thread to exit
-    //not used the DWORD dwMilliseconds
+	// wait the thread task to finish
     DWORD Wait();
 
-    void *GetThreadPara() { return m_pThreadPara; }
+	//get the task parameters
+    void *GetTaskPara() { return m_pTaskPara; }
 
-#ifdef WIN32  
-    static unsigned __stdcall ThreadFunction(void* arg);
-#else  
-    static void* ThreadFunction(void* arg);
-#endif  
+	//get the result of the thread task
+	DWORD GetThreadResult() { return m_dwThreadResult; }
+
+	bool  AllocateFirstCache(DWORD dwSize);
+
+	bool  AllocateSecondCache(DWORD dwSize);
+
+	byte* GetFirstCache() { return m_pbyFirstCache; }
+	byte* GetSecondCache() { return m_pbySecondCache; }
+
+	DWORD GetFirstCacheSize() { return m_dwFirstCacheSize; }
+	DWORD GetSecondCacheSize() { return m_dwSecondCacheSize; }
+
+	bool IsRunning() { return m_bRunning; }
+
+	DWORD GetThreadID() { return m_dwThreadID; }
+
+	void SetThreadPool(void *pPool) { m_pThreadPool = pPool; }
+	void SetThreadState(CXTHREAD_STATE state) { m_stateThread = state; }
+	CXTHREAD_STATE GetThreadState() { return m_stateThread; }
 
 protected:
+#ifdef WIN32  
+	static unsigned __stdcall ThreadFunction(void* arg);
+#else  
+	static void* ThreadFunction(void* arg);
+#endif  
+
+	//the main logic
+	void ThreadLoop();
 private:
+	DWORD   m_dwThreadID;
 #ifdef WIN32  
     HANDLE    m_hThread;
 #else  
     pthread_t m_hThread;
     pthread_attr_t m_ThreadAttr;
 #endif
+	bool   m_bStarted;
 
     RunFun m_funRun;
-    void * m_pThreadPara;
+    void * m_pTaskPara;
     bool   m_bRunning;
+	//==-2 terminaled
+	DWORD  m_dwThreadResult;
+
+	byte * m_pbyFirstCache;
+	DWORD  m_dwFirstCacheSize;
+
+	byte * m_pbySecondCache;
+	DWORD  m_dwSecondCacheSize;
+
+	CXEvent m_eveWaitRunning;
+	CXEvent m_eveFinish;
+	void  * m_pThreadPool;
+	CXTHREAD_STATE m_stateThread;
 };
 
-#endif //CXEPOLLSERVERKERNEL_H 
+#endif //__CXTHREAD_H__ 

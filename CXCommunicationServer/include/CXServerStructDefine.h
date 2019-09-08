@@ -73,6 +73,15 @@ namespace CXCommunication
         char buf[CX_BUF_SIZE];
     }CXBufferObj, *PCXBufferObj;
 
+    
+    typedef struct _CX_STATE_STEP_INFO
+    {
+        void *pMes;
+        int64 iCurTime;
+        DWORD dwNextState;
+        char  szBuf[128];
+    }CXStateStepInfo, *PCXStateStepInfo;
+
 
     
 }

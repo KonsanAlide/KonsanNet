@@ -21,7 +21,8 @@ using namespace CXCommunication;
 CXUnknownRPCObject::CXUnknownRPCObject()
 {
     m_bIsUniqueInstance = true;
-    GetObjectGuid();
+    GetClassGuid();
+	m_strObjectGuid = m_strClassGuid;
 }
 
 
@@ -36,7 +37,6 @@ int CXUnknownRPCObject::DispatchMes(PCXMessageData pMes)
     return iRet;
 }
 
-
 CXRPCObjectServer* CXUnknownRPCObject::CreateObject()
 {
     return (CXRPCObjectServer*)new CXUnknownRPCObject;
@@ -49,16 +49,17 @@ int CXUnknownRPCObject::SendData(CXConnectionObject * pCon, const byte *pbyData,
 
 void CXUnknownRPCObject::Destroy()
 {
+	Reset();
 }
 
 void CXUnknownRPCObject::MessageToString(PCXMessageData pMes, string &strMes)
 {
 	char  szInfo[1024] = { 0 };
 	CXGuidObject guidObj(false);
-	string strPacketGUID = guidObj.ConvertGuid(pMes->bodyData.byPacketGuid);
+	string strRequestID = guidObj.ConvertGuid(pMes->bodyData.byRequestID);
 
 	sprintf_s(szInfo, 1024, "unknown object message, packet_guid:%s,message_code:%04d,message length:%d",
-		strPacketGUID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
+        strRequestID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
 	strMes = szInfo;
 }
 

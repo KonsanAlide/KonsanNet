@@ -32,6 +32,10 @@ Description:
 #include "CXPacketCodeDefine.h"
 #include "CXCommunicationServer.h"
 #include "CXRPCObjectManager.h"
+#include "CXRPCObjectServer.h"
+#include "CXTaskParseMessage.h"
+#include "CXTaskPool.h"
+#include "CXTaskPrepareMessage.h"
 //#include "CXSocketServerKernel.h"
 using namespace std;
 
@@ -47,6 +51,7 @@ namespace CXCommunication
 		m_pJournalLogHandle = NULL;
 		m_pRPCObjectManager = NULL;
 		m_pSocketKernel = NULL;
+		m_pTaskPool = NULL;
         Reset();
     }
 
@@ -66,13 +71,15 @@ namespace CXCommunication
         m_uiConnectionIndex = 0;
 
         m_uiRecvBufferIndex = 0;
+        m_uiSendBufferIndex = 0;
         m_uiLastProcessBufferIndex = 0;
 
         m_nState = INITIALIZED;
 
         //last packet time
         m_tmLastPacketTime = 0;
-        memset(&m_addrRemote, 0, sizeof(m_addrRemote));
+        m_strRemoteIP = "";
+        m_wRemotePort = 0;
 
         m_lpServer = NULL;
         m_lpCacheObj = NULL;
@@ -95,8 +102,10 @@ namespace CXCommunication
 		m_uiLastProcessedMessageSequenceNum = 0;
 
         // the number of the buffer by posting to iocp model
-        m_uiNumberOfPostBuffers = 0;
+        m_uiPostedSentBuffers = 0;
 
+        m_uiPostedRecvBuffers = 0;
+ 
 		m_iLastUnpackedMessageSequenceNum = 0;
 
         m_pSessionsManager = NULL;
@@ -105,8 +114,8 @@ namespace CXCommunication
 
         m_pDataParserHandle = NULL;
 
-        //10 seconds
-        m_dwTimeOutMSeconds = 10000;
+        //60 seconds
+        m_dwTimeOutMSeconds = 60000;
 
         m_tmReleasedTime = 0;
 
@@ -123,6 +132,26 @@ namespace CXCommunication
         m_encryptType = CXDataParserImpl::CXENCRYPT_TYPE_NONE;
         m_compressType = CXDataParserImpl::CXCOMPRESS_TYPE_NONE;
 
+        m_bProxyConnection = false;
+
+		// the header of the inner message list
+		m_plstInnerMessageHead = NULL;
+
+		// the end of the inner message list
+		m_plstInnerMessageEnd = NULL;
+
+		m_bAsyncParseData = false;
+
+		//use task pool to process the data needed to send, compress and encrypt it asynchronously
+		m_bAsyncPrepareData = false;
+
+		// this message had been processed asynchronously
+		m_bAsynchronouslyMes = false;
+
+		m_bContinuousProcessing = false;
+
+		memset(m_byObjectID,0, CX_GUID_LEN);
+		memset(m_byRequestID, 0, CX_GUID_LEN);
         m_lockRead.Unlock();
     }
 
@@ -135,23 +164,38 @@ namespace CXCommunication
         m_lock.Unlock();
     }
 
-    void CXConnectionObject::Build(cxsocket sock,uint64 uiConnIndex,sockaddr_in addr)
+    void CXConnectionObject::Build(cxsocket sock,uint64 uiConnIndex, const string &strRemoteIp, WORD wRemotePort)
     {
         Lock();
         Reset();
         m_sock = sock;
 
-        m_tmAcceptTime = GetTickCountValue();
+        m_tmAcceptTime = GetCurrentTimeMS();
 
         m_uiConnectionIndex = uiConnIndex;
 
-        m_nState = PENDING;
+		if (sock != 0) //this socket have not been created, is creating
+		{
+			m_nState = PENDING;
+		}
+
+        m_strRemoteIP = strRemoteIp;
+        m_wRemotePort = wRemotePort;
         UnLock();
     }
 
+	void CXConnectionObject::OnCreated(cxsocket sock)
+	{
+		Lock();
+		m_sock = sock;
+		m_tmAcceptTime = GetCurrentTimeMS();
+		m_nState = ESTABLISHED;
+		UnLock();
+	}
+
     void CXConnectionObject::RecordCurrentPacketTime()
     {
-        m_tmLastPacketTime = GetTickCountValue();
+        m_tmLastPacketTime = GetCurrentTimeMS();
     }
 
     //push the received buffer to the end of the read buffer list
@@ -223,7 +267,7 @@ namespace CXCommunication
 			//reduce the packet number that has been posted.
             m_lockRead.Lock();
             m_uiNumberOfReceivedBufferInList++;
-            m_uiNumberOfPostBuffers--;
+            m_uiPostedRecvBuffers--;
             m_lockRead.Unlock();
 			return true;
         }
@@ -239,10 +283,9 @@ namespace CXCommunication
 	//return value: ==-2 the read list has some error
 	//              ==-3 occur error when allocat memory
 	//              ==-4 received a incorrect packet
-    int CXConnectionObject::RecvPacket(PCXBufferObj pBufObj, DWORD dwTransDataOfBytes,
-		byte* pbyThreadCache, DWORD dwCacheLen,bool bLockBySelf)
+    int CXConnectionObject::RecvPacket(PCXBufferObj pBufObj, DWORD dwTransDataOfBytes,bool bLockBySelf)
     {
-		if (pBufObj == NULL || pbyThreadCache==NULL || dwCacheLen==0)
+		if (pBufObj == NULL || m_lpServer ==NULL )
 		{
 			return INVALID_PARAMETER;
 		}
@@ -338,8 +381,8 @@ namespace CXCommunication
 			}
 
             //a wrong header data
-            //wrong packet , the packet size must be less than 20MB
-            if (packetHeader.dwDataLen > CX_MAX_CHACHE_SIZE*2)
+            //wrong packet , the packet size must be less than 1MB
+            if (packetHeader.dwDataLen > CX_MAX_CHACHE_SIZE)
             {
                 sprintf_s(szInfo, 1024, "Received a error packet,the size of the packet is larger than 10MB ,connection id = %lld,packet sequence number:%lld\n",
                     m_uiConnectionIndex, pCurBuf->nSequenceNum);
@@ -347,7 +390,7 @@ namespace CXCommunication
 				m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
 				break;
             }
-            INT64 iBeginTime = GetCurrentTimeMS();
+            int64 iBeginTime = GetCurrentTimeMS();
             int iBufferLen = sizeof(CXMessageData)- 1 + packetHeader.dwDataLen;
 			if (pMessageData == NULL)
 			{
@@ -367,6 +410,7 @@ namespace CXCommunication
 				pMessageData->dwDataLen = packetHeader.dwDataLen;
 				pMessageData->iBeginTime = iBeginTime;
 				pMessageData->iSequenceNum = 0;
+				pMessageData->iBeginProcessTime = iBeginTime;
 				pMessageData->pNext = NULL;
 			}
 
@@ -437,85 +481,56 @@ namespace CXCommunication
 
             if (VerifyPacketBodyData(&packetHeader, pBodyData))
             {
-                bool bCompressed = false;
-                bool bEncrypted = false;
-				
 				if ((CXDataParserImpl::CXENCRYPT_TYPE)packetHeader.byEncryptFlag != CXDataParserImpl::CXENCRYPT_TYPE_NONE ||
 					(CXDataParserImpl::CXCOMPRESS_TYPE)packetHeader.byCompressFlag != CXDataParserImpl::CXCOMPRESS_TYPE_NONE)
 				{
-					if (m_pDataParserHandle)// need to parse data
+					if (m_pDataParserHandle == NULL)// need to parse data
 					{
-						int iNewBufferLen = sizeof(CXMessageData) - 1 + packetHeader.dwOrignDataLen;
-						PCXMessageData pNewMes = (PCXMessageData)GetBuffer(packetHeader.dwOrignDataLen);
-						if (pNewMes == NULL)
+						FreeBuffer(pMessageData);
+						pMessageData = NULL;
+						return -6;
+					}
+
+					//using task pool
+					if (m_pTaskPool != NULL && m_bAsyncParseData)
+					{
+						CXTaskPool* pTaskPool = (CXTaskPool*)m_pTaskPool;
+						CXTaskParseMessage *pTask = (CXTaskParseMessage *)pTaskPool->GetFreeTaskObject(
+							CXTaskBase::CX_RUNING_TASK_TYPE_PARSE_DATA);
+						if (pTask == NULL)
 						{
-							sprintf_s(szInfo, 1024, "Failed to get %d-bytes buffer to parse data  ,This :%x, Cache address:%x\n",
-								packetHeader.dwOrignDataLen, (void*)this, (void*)m_lpCacheObj);
+							sprintf_s(szInfo, 1024, "Failed to new a message parser object \n");
 							m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-							printf(szInfo);
 							bAllcateMemoryFails = true;
 							break;
 						}
-						pNewMes->pConObj = (void*)this;
-						pNewMes->dwType = 1;
-						pNewMes->dwDataLen = packetHeader.dwOrignDataLen;
-						pNewMes->iBeginTime = pMessageData->iBeginTime;
-						pNewMes->iSequenceNum = pMessageData->iSequenceNum;
-						pNewMes->pNext = NULL;
-						DWORD dwRetLen = 0;
-						DWORD dwOutputBufLen = packetHeader.dwOrignDataLen;
 
-						bool bParseRet = m_pDataParserHandle->ParseData((CXDataParserImpl::CXENCRYPT_TYPE)packetHeader.byEncryptFlag,
-							(CXDataParserImpl::CXCOMPRESS_TYPE)packetHeader.byCompressFlag,
-							pBodyData, pMessageData->dwDataLen,
-							(byte*)&pNewMes->bodyData, dwOutputBufLen,
-							pbyThreadCache, dwCacheLen, dwRetLen);
-						if (!bParseRet || dwRetLen!= dwOutputBufLen)
-						{
-							sprintf_s(szInfo, 1024, "Received a error packet,an error occur in parsing the packet,connection id = %lld,packet sequence number:%lld \n",
-								m_uiConnectionIndex, pMessageData->iSequenceNum);
-							m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
-
-							FreeBuffer(pMessageData);
-							pMessageData = NULL;
-
-							FreeBuffer(pNewMes);
-
-							bFindErrorPacket = true;
-							break;
-						}
-						else
+						pTask->SetTaskInfo(pMessageData, packetHeader);
+						pTaskPool->PushTask(pTask);
+					}
+					else
+					{
+						if (!ParseMessage(pMessageData, packetHeader))
 						{
 							FreeBuffer(pMessageData);
 							pMessageData = NULL;
-							pMessageData = pNewMes;
-
-                            sprintf_s(szInfo, 1024, "Received a packet,SequenceNum:%lld, connection index:%lld,pCurMes:%x\n",
-                                m_uiConnectionIndex, pMessageData->iSequenceNum, pMessageData);
-                            //m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
+							return -5;
 						}
 					}
 				}
-
-
-                CXGuidObject guidObj(false);
-                string strPacketGUID = guidObj.ConvertGuid(pMessageData->bodyData.byPacketGuid);
-                if (m_pIOStatHandle != NULL)
-                    m_pIOStatHandle->BeginIOStat("total", strPacketGUID, pMessageData->iBeginTime);
-
-                if (m_pfnProcessOnePacket != NULL)
-                {
-                    AddReceivedPacketNumber();
-                    //g_lock.Lock();
-                    //g_iTotalMessage++;
-                    //g_lock.Unlock();
-                    //m_uiNumberOfReceivedPacketInQueue++;
-                    m_pfnProcessOnePacket(*this, pMessageData);
-                }
-                else
-                {
-                    OnProcessOnePacket(*this, pMessageData);
-                }
+				else
+				{
+					CXGuidObject guidObj(false);
+					string strRequestID = guidObj.ConvertGuid(pMessageData->bodyData.byRequestID);
+					if (m_pIOStatHandle != NULL)
+					{
+						if (!IsProxyConnection())
+						{
+                            m_pIOStatHandle->BeginIOStat("total", strRequestID, pMessageData->iBeginTime);
+                        }
+					}
+                    PushReceivedMessage(pMessageData);
+				}
             }
             else // the packet is wrong packet, break it ,and close this connection
             {
@@ -558,6 +573,25 @@ namespace CXCommunication
         return RETURN_SUCCEED;
     }
 
+	//push received message to message queue
+	void CXConnectionObject::PushReceivedMessage(PCXMessageData pMes, bool bAddRes)
+	{
+		if (m_pfnProcessOnePacket != NULL)
+		{
+            if(bAddRes)
+                AddReceivedPacketNumber();
+			//g_lock.Lock();
+			//g_iTotalMessage++;
+			//g_lock.Unlock();
+			//m_uiNumberOfReceivedPacketInQueue++;
+			m_pfnProcessOnePacket(*this, pMes);
+		}
+		else
+		{
+			OnProcessOnePacket(*this, pMes);
+		}
+	}
+
     bool CXConnectionObject::VerifyPacketBodyData(PCXPacketHeader pHeader, byte *pData)
     {
         DWORD dwCheckSum = 0;
@@ -572,6 +606,122 @@ namespace CXCommunication
 
         return true;
     }
+
+	bool CXConnectionObject::ParseMessage(PCXMessageData pMessageData, CXPacketHeader &packetHeader)
+	{
+		if (pMessageData == NULL || m_lpServer == NULL)
+		{
+			if(pMessageData)
+				FreeBuffer(pMessageData);
+			return false;
+		}
+
+		char szInfo[1024] = { 0 };	
+		CXCommunicationServer *pComServer = (CXCommunicationServer *)m_lpServer;
+
+		int iNewBufferLen = packetHeader.dwOrignDataLen*2;
+		//using the rsa encryption , the buffer size must be larger than 256 bytes
+		if (iNewBufferLen < 256)
+		{
+			iNewBufferLen = 256;
+		}
+        bool bUseThreadCache = true;
+		byte* pbyFirstCache = pComServer->GetFirstThreadCache(iNewBufferLen);
+        if (pbyFirstCache == NULL)
+        {
+            pbyFirstCache = (byte*)GetBuffer(iNewBufferLen);
+            if (pbyFirstCache == NULL)
+            {
+                sprintf_s(szInfo, 1024, "Failed to get %d-bytes thread cache to parse data  ,This :%x, Cache address:%x\n",
+                    iNewBufferLen, (void*)this, (void*)m_lpCacheObj);
+                m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+                FreeBuffer(pMessageData);
+                return false;
+            }
+            else
+            {
+                bUseThreadCache = false;
+            }
+        }
+		
+		//the rsa encryption use not less than 256 bytes buffer
+		DWORD dwOutputBufLen = packetHeader.dwOrignDataLen+sizeof(CXMessageData)-1;
+		if (dwOutputBufLen < 512)
+		{
+			dwOutputBufLen = 512;
+		}
+		else
+		{
+			//left not less than 256 bytes buffer
+			dwOutputBufLen += 256;
+		}
+		PCXMessageData pNewMes = (PCXMessageData)GetBuffer(dwOutputBufLen);
+		if (pNewMes == NULL)
+		{
+			sprintf_s(szInfo, 1024, "Failed to get %d-bytes buffer to parse data  ,This :%x, Cache address:%x\n",
+				packetHeader.dwOrignDataLen, (void*)this, (void*)m_lpCacheObj);
+			m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+			FreeBuffer(pMessageData);
+            if(!bUseThreadCache)
+                FreeBuffer(pbyFirstCache);
+			return false;
+		}
+		pNewMes->pConObj = (void*)this;
+		pNewMes->dwType = 1;
+		pNewMes->dwDataLen = packetHeader.dwOrignDataLen;
+		pNewMes->iBeginTime = pMessageData->iBeginTime;
+		pNewMes->iBeginProcessTime = pMessageData->iBeginTime;
+		pNewMes->iSequenceNum = pMessageData->iSequenceNum;
+		pNewMes->pNext = NULL;
+		DWORD dwRetLen = 0;
+		dwOutputBufLen = dwOutputBufLen-(sizeof(CXMessageData) - 1);
+
+		byte *pBodyData = (byte*)&pMessageData->bodyData;
+
+		bool bParseRet = m_pDataParserHandle->ParseData((CXDataParserImpl::CXENCRYPT_TYPE)packetHeader.byEncryptFlag,
+			(CXDataParserImpl::CXCOMPRESS_TYPE)packetHeader.byCompressFlag,
+			pBodyData, pMessageData->dwDataLen,
+			(byte*)&pNewMes->bodyData, dwOutputBufLen,
+			pbyFirstCache, iNewBufferLen, dwRetLen);
+		if (!bParseRet || dwRetLen != packetHeader.dwOrignDataLen)
+		{
+			sprintf_s(szInfo, 1024, "Received a error packet,an error occur in parsing the packet,connection id = %lld,packet sequence number:%lld \n",
+				m_uiConnectionIndex, pMessageData->iSequenceNum);
+			m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
+			//FreeBuffer(pMessageData);
+			//pMessageData = NULL;
+            if (!bUseThreadCache)
+                FreeBuffer(pbyFirstCache);
+			FreeBuffer(pMessageData);
+			FreeBuffer(pNewMes);
+
+			return false;
+		}
+		else
+		{
+            if (!bUseThreadCache)
+                FreeBuffer(pbyFirstCache);
+			FreeBuffer(pMessageData);
+			pMessageData = NULL;
+			pMessageData = pNewMes;
+
+			sprintf_s(szInfo, 1024, "Received a packet,SequenceNum:%lld, connection index:%lld,pCurMes:%x\n",
+				m_uiConnectionIndex, pMessageData->iSequenceNum, pMessageData);
+			//m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
+		}
+
+		CXGuidObject guidObj(false);
+		string strRequestID = guidObj.ConvertGuid(pMessageData->bodyData.byRequestID);
+
+        if (!IsProxyConnection())
+        {
+            m_pIOStatHandle->BeginIOStat("total", strRequestID, pMessageData->iBeginTime);
+        }
+
+        PushReceivedMessage(pMessageData);
+		return true;
+	}
 
     int  CXConnectionObject::OnProcessOnePacket(CXConnectionObject &conObj, PCXMessageData pMes)
     {
@@ -599,13 +749,13 @@ namespace CXCommunication
         m_lock.Lock();
 #ifdef WIN32
         DWORD dwSend = 0;
-		m_uiNumberOfPostBuffers++;
+        m_uiPostedSentBuffers++;
         if (WSASend(m_sock, &pBufObj->wsaBuf, 1, &dwSend, 0, &pBufObj->ol, NULL) != 0)
         {
             DWORD dwEr = ::WSAGetLastError();
             if (dwEr != WSA_IO_PENDING)
             {
-				m_uiNumberOfPostBuffers--;
+                m_uiPostedSentBuffers--;
                 m_lock.Unlock();
                 FreeCXBufferObj(pBufObj);
                 return -3;
@@ -631,15 +781,20 @@ namespace CXCommunication
 
 		pBufObj->nOperate = OP_WRITE;
 
-
 		if(bLockBySelf)
 		    m_lockSend.Lock();
 
 		if (!PushSendBuffer(pBufObj))
 		{
+			FreeCXBufferObj(pBufObj);
 			if (bLockBySelf)
 				m_lockSend.Unlock();
 			return -2;
+		}
+
+		if (m_nState != ESTABLISHED) //creating or pending
+		{
+			return RETURN_SUCCEED;
 		}
 
 		int iRet = SendDataList();
@@ -717,14 +872,14 @@ namespace CXCommunication
 #ifdef WIN32
         DWORD dwRecv = 0;
         DWORD dwFlag = 0;
-		m_uiNumberOfPostBuffers++;
+        m_uiPostedRecvBuffers++;
         if (WSARecv(m_sock, &pBufObj->wsaBuf, 1,
             &dwRecv, &dwFlag, &pBufObj->ol, NULL) != 0)
         {
             DWORD dwEr = ::WSAGetLastError();
             if (dwEr != WSA_IO_PENDING)
             {
-				m_uiNumberOfPostBuffers--;
+                m_uiPostedRecvBuffers--;
                 m_uiRecvBufferIndex--;
                 m_lockRead.Unlock();
                 FreeCXBufferObj(pBufObj);
@@ -748,6 +903,7 @@ namespace CXCommunication
         pBufObj->pConObj = (void*)this;
         pBufObj->wsaBuf.len = CX_BUF_SIZE;
         pBufObj->wsaBuf.buf = pBufObj->buf;
+        pBufObj->iBufSize = CX_BUF_SIZE;
         return pBufObj;
     }
 
@@ -768,11 +924,18 @@ namespace CXCommunication
         m_lockRead.Unlock();
     }
 
-    void  CXConnectionObject::ReduceNumberOfPostBuffers()
+    void  CXConnectionObject::ReduceNumberOfPostedRecvBuffers()
     {
         m_lockRead.Lock();
-        m_uiNumberOfPostBuffers--;
+        m_uiPostedRecvBuffers--;
         m_lockRead.Unlock();
+    }
+
+    void  CXConnectionObject::ReduceNumberOfPostedSentBuffers()
+    {
+        m_lockSend.Lock();
+        m_uiPostedSentBuffers--;
+        m_lockSend.Unlock();
     }
 
     void CXConnectionObject::Close(bool bLockBySelf)
@@ -787,14 +950,7 @@ namespace CXCommunication
             closesocket(m_sock);
             m_nState = CLOSING;
         }
-        if (m_uiNumberOfPostBuffers == 0)
-        {
-            //process the left buffer in the read list
-            if (m_pListReadBuf!=NULL && (m_pListReadBuf->nSequenceNum == (m_uiLastProcessBufferIndex + 1)))
-            {
-                bNeedProcessLeftBuffers = true;
-            }
-        }
+        
         UnlockRead();
 
         //process the left buffer in the read list
@@ -803,7 +959,7 @@ namespace CXCommunication
             //RecvPacket(NULL, 0,false);
         }
 
-        if (m_uiNumberOfPostBuffers == 0 && m_pListReadBuf != NULL)
+        if (m_uiPostedSentBuffers == 0 && m_pListReadBuf != NULL)
         {
             //if miss some fragment of the packets
             //free this read buffer list
@@ -850,7 +1006,7 @@ namespace CXCommunication
         int nRecv = 0;
         int nTotalRead = 0;
         bool bReadOk = false;
-        int  nLeftBufLen = pBufObj->wsaBuf.len;
+        int  nLeftBufLen = pBufObj->iBufSize;
         while (nLeftBufLen>0)
         {
             // must comfirm the sockCur is nonblocking.
@@ -903,7 +1059,7 @@ namespace CXCommunication
         if (nTotalRead>0)
         {
             *ppBufObj = pBufObj;
-            m_uiNumberOfPostBuffers++;
+            m_uiPostedRecvBuffers++;
         }
         else
         {
@@ -986,137 +1142,231 @@ namespace CXCommunication
     }
 
     //send a packet to the peer
-    bool  CXConnectionObject::SendPacket(const byte* pbData, DWORD dwLen, DWORD dwMesCode,
-         bool bLockBySelf)
+    bool  CXConnectionObject::SendPacket(const byte* pbData, DWORD dwLen, DWORD dwMesCode, PCXMessageData pMes,bool bLockBySelf)
     {
-        //if (bLockBySelf)
-        //    m_lockSend.Lock();
-        if (m_encryptType != CXDataParserImpl::CXENCRYPT_TYPE_NONE ||
-            m_compressType != CXDataParserImpl::CXCOMPRESS_TYPE_NONE)
-        {
-            if (m_pDataParserHandle == NULL)
-            {
-                //if (bLockBySelf)
-                //    m_lockSend.Unlock();
-                return false;
-            }
-        }
-        uint64 nSequenceNum = m_uiCurSendingPacketSequenceNum++;
-        uint64 uiSendBufferIndex = m_uiSendBufferIndex++;
+		if (pbData == NULL|| dwLen==0 || m_lpServer == NULL)
+		{
+			return false;
+		}
 
-        //m_lockSend.Unlock();
+		//if (bLockBySelf)
+		//	m_lockSend.Lock();
 
-        DWORD dwPacketLen = dwLen + sizeof(CXPacketData)-1;
+        DWORD dwPacketLen = dwLen + sizeof(CXPacketData) - 1;
         DWORD dwBufferLen = dwPacketLen + sizeof(CXBufferObj) - CX_BUF_SIZE;
-        DWORD dwPacketBodyLen= dwPacketLen-sizeof(CXPacketHeader);
-        DWORD dwOrignDataLen = dwPacketBodyLen;
-        
-        PCXBufferObj pBufObj = NULL;
-        byte *       pPacketData = NULL;
-        byte *       pbyPacketBodyData= NULL;
+        DWORD dwPacketBodyLen = dwPacketLen - sizeof(CXPacketHeader);
 
-        DWORD dwPreparedDataLen = 0;
-        if (m_encryptType != CXDataParserImpl::CXENCRYPT_TYPE_NONE ||
-            m_compressType != CXDataParserImpl::CXCOMPRESS_TYPE_NONE)
+        PCXBufferObj pBufObj = GetCXBufferObj(dwBufferLen);
+        if (pBufObj == NULL)
         {
-            byte *pInputData = (byte*)GetBuffer(dwPacketBodyLen);
-            if (pInputData == NULL)
-            {
-                return false;
-            }
-            DWORD dwInputDataLen = dwPacketBodyLen;
-
-            DWORD dwCacheBufLen = dwPacketBodyLen * 2;
-            if (dwCacheBufLen < 512)
-                dwCacheBufLen = 512;
-            byte *pCacheBuf = (byte*)GetBuffer(dwCacheBufLen);
-            if (pCacheBuf == NULL)
-            {
-                FreeBuffer(pInputData);
-                return false;
-            }
-            
-            dwBufferLen = dwCacheBufLen + sizeof(CXPacketHeader) + sizeof(CXBufferObj) - CX_BUF_SIZE;
-            pBufObj = GetCXBufferObj(dwBufferLen);
-            if (pBufObj == NULL)
-            {
-                FreeBuffer(pInputData);
-                FreeBuffer(pCacheBuf);
-                return false;
-            }
-
-            PCXPacketBodyData pBodyData = (PCXPacketBodyData)pInputData;
-            pBodyData->dwMesCode = dwMesCode;
-            pBodyData->dwPacketNum = uiSendBufferIndex;
-            memcpy(pBodyData->buf, pbData, dwLen);
-
-            pPacketData = (byte *)pBufObj->wsaBuf.buf;
-            pbyPacketBodyData = pPacketData + sizeof(CXPacketHeader);
-
-            DWORD dwOutputBufLen = dwCacheBufLen;
-
-            bool bFunRet = m_pDataParserHandle->PrepareData(m_encryptType, m_compressType,
-                pInputData, dwInputDataLen, pbyPacketBodyData, dwOutputBufLen,
-                pCacheBuf, dwCacheBufLen, dwPreparedDataLen);
-            if (!bFunRet)
-            {
-                FreeBuffer(pInputData);
-                FreeBuffer(pCacheBuf);
-                FreeCXBufferObj(pBufObj);
-                return false;
-            }
-            FreeBuffer(pInputData);
-            FreeBuffer(pCacheBuf);
-            dwPacketLen = dwPreparedDataLen+ sizeof(CXPacketHeader);
-        }
-        else
-        {
-            pBufObj = GetCXBufferObj(dwBufferLen);
-            pPacketData = (byte *)pBufObj->wsaBuf.buf;
-            dwPreparedDataLen = dwPacketBodyLen;
-
-            pbyPacketBodyData = pPacketData + sizeof(CXPacketHeader);
-            PCXPacketBodyData pBodyData = (PCXPacketBodyData)pbyPacketBodyData;
-            pBodyData->dwMesCode = dwMesCode;
-            pBodyData->dwPacketNum = uiSendBufferIndex;
-            memcpy(pBodyData->buf, pbData, dwLen);
-        }
-        pBufObj->nSequenceNum = nSequenceNum;
-        pBufObj->wsaBuf.len = dwPacketLen;
-
-        DWORD dwCheckSum = 0;
-        for (DWORD i = 0; i<dwLen; i++)
-        {
-            dwCheckSum += (unsigned int)pbyPacketBodyData[i];
-        }
-        dwCheckSum += dwMesCode;
-
-        //send the header
-        PCXPacketHeader pTcpHeader = (PCXPacketHeader)pPacketData;
-        pTcpHeader->dwDataLen = dwPreparedDataLen;
-        pTcpHeader->dwCheckSum = dwCheckSum;
-        pTcpHeader->wFlag = CX_PACKET_HEADER_FLAG;
-        pTcpHeader->byCompressFlag = (byte)m_compressType;
-        pTcpHeader->byEncryptFlag = (byte)m_encryptType;
-        pTcpHeader->dwOrignDataLen = dwOrignDataLen;
-
-        
-
-        DWORD dwSentLen = 0;
-		int iRet = PostSend(pBufObj,false);
-        //m_lockSend.Lock();
-        //int iRet = PostSendBlocking(pBufObj, dwSentLen, false);
-        //FreeCXBufferObj(pBufObj);
-        if (iRet != 0)
-        {
-            //if (bLockBySelf)
-            //    m_lockSend.Unlock();
             return false;
         }
-        //if (bLockBySelf)
-        //    m_lockSend.Unlock();
-        return true;
+        PCXPacketBodyData pBodyData = (PCXPacketBodyData)(pBufObj->wsaBuf.buf + sizeof(CXPacketHeader));
+        memcpy(pBodyData->buf, pbData, dwLen);
+        bool bRet = SendPacket(pBufObj, dwLen, dwMesCode, pMes, bLockBySelf);
+		if (!bRet)
+		{
+			//FreeCXBufferObj(pBufObj);
+		}
+		return bRet;
     }
+
+	//send a packet to the peer
+	//the pBufObj will be freed inside this function, the caller not need to free it
+	//pBufObj: input packet buffer, must be allocate from memory cache
+	//dwLen:   the data size of the CXPacketBodyData.buf.
+	//pMes:    the received message in this event from own connection, if NULL , this function will call by other object internally
+    bool CXConnectionObject::SendPacket(PCXBufferObj pBufObj,DWORD dwLen, DWORD dwMesCode, 
+        PCXMessageData pMes, bool bLockBySelf)
+    {
+        if (pBufObj == NULL || dwLen == 0 || m_lpServer == NULL)
+        {
+			if (pBufObj != NULL)
+			{
+				FreeCXBufferObj(pBufObj);
+			}
+            return false;
+        }
+
+		//if (bLockBySelf)
+		//	m_lockSend.Lock();
+
+        PCXPacketBodyData pBodyData = (PCXPacketBodyData)(pBufObj->wsaBuf.buf + sizeof(CXPacketHeader));
+        pBodyData->dwMesCode = dwMesCode;
+        pBodyData->dwPacketNum = m_uiSendBufferIndex++;
+        if (pMes != NULL)//this message is null, show that this packet is a third-party packet
+        {
+            memcpy(pBodyData->byObjectGuid, pMes->bodyData.byObjectGuid, CX_GUID_LEN);
+            memcpy(pBodyData->byRequestID, pMes->bodyData.byRequestID, CX_GUID_LEN);
+        }
+		else
+		{
+			memcpy(pBodyData->byObjectGuid, m_byObjectID, CX_GUID_LEN);
+			memcpy(pBodyData->byRequestID, m_byRequestID, CX_GUID_LEN);
+		}
+        
+        pBufObj->nSequenceNum = m_uiCurSendingPacketSequenceNum++;
+        pBufObj->wsaBuf.len = dwLen + sizeof(CXPacketData) - 1;
+
+        DWORD dwPacketLen = pBufObj->wsaBuf.len;
+        DWORD dwPacketBodyLen = dwPacketLen - sizeof(CXPacketHeader);
+        DWORD dwOrignDataLen = dwPacketBodyLen;
+
+		if (m_encryptType != CXDataParserImpl::CXENCRYPT_TYPE_NONE ||
+			m_compressType != CXDataParserImpl::CXCOMPRESS_TYPE_NONE)
+		{
+			if (m_pDataParserHandle == NULL)
+			{
+				FreeCXBufferObj(pBufObj);
+				return false;
+			}
+
+			//using task pool
+			if (m_pTaskPool != NULL && m_bAsyncPrepareData)
+			{
+				CXTaskPool* pTaskPool = (CXTaskPool*)m_pTaskPool;
+				CXTaskPrepareMessage *pTask = (CXTaskPrepareMessage *)pTaskPool->GetFreeTaskObject(
+					CXTaskBase::CX_RUNING_TASK_TYPE_PREPARE_DATA);
+				if (pTask == NULL)
+				{
+					char szInfo[1024] = { 0 };
+					sprintf_s(szInfo, 1024, "Failed to new a message parser object \n");
+					m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
+					FreeCXBufferObj(pBufObj);
+					return false;
+				}
+				m_bAsynchronouslyMes = true;
+				pTask->SetTaskInfo(this, pMes, pBufObj);
+				pTaskPool->PushTask(pTask);
+				
+				return true;
+			}
+			else
+			{
+				return PreparedAndSendPacket(pBufObj, pMes);
+			}
+		}
+		else
+		{
+			return SendAssembledPacket(pBufObj, pBufObj->wsaBuf.len - sizeof(CXPacketHeader));
+		}
+    }
+
+	//send the entire packet
+	//the pInputBuf will be freed inside this function, the caller not need to free it
+	bool CXConnectionObject::PreparedAndSendPacket(PCXBufferObj pInputBuf, PCXMessageData pMes)
+	{
+		DWORD dwPacketLen = pInputBuf->wsaBuf.len;
+		DWORD dwPacketBodyLen = dwPacketLen - sizeof(CXPacketHeader);
+		DWORD dwOrignDataLen = dwPacketBodyLen;
+		
+		byte * pInputData = (byte *)(pInputBuf->wsaBuf.buf + sizeof(CXPacketHeader));
+
+		//the buffer size must be not less than 256 bytes
+		DWORD dwCacheBufLen = dwPacketBodyLen * 2;
+		if (dwCacheBufLen < 256)
+			dwCacheBufLen = 256;
+
+		CXCommunicationServer *pComServer = (CXCommunicationServer *)m_lpServer;
+
+        bool bUseThreadCache = true;
+        byte* pCacheBuf = pComServer->GetFirstThreadCache(dwCacheBufLen);
+        if (pCacheBuf == NULL)
+        {
+            pCacheBuf = (byte*)GetBuffer(dwCacheBufLen);
+            if (pCacheBuf == NULL)
+            {
+                FreeCXBufferObj(pInputBuf);
+                return false;
+            }
+            else
+            {
+                bUseThreadCache = false;
+            }
+        }
+		
+		//the rsa encryption use not less than 256 bytes buffer
+		DWORD dwBufferLen = dwPacketBodyLen * 2 + sizeof(CXPacketHeader) + sizeof(CXBufferObj) - CX_BUF_SIZE;
+		if (dwBufferLen < 512)
+			dwBufferLen = 512;
+		else
+		{
+			dwBufferLen += 256;
+		}
+		PCXBufferObj pBufObj = GetCXBufferObj(dwBufferLen);
+		if (pBufObj == NULL)
+		{
+			FreeCXBufferObj(pInputBuf);
+            if(!bUseThreadCache)
+                FreeBuffer(pCacheBuf);
+			return false;
+		}
+
+		byte * pbyPacketBodyData = (byte*)(pBufObj->wsaBuf.buf + sizeof(CXPacketHeader));
+
+		DWORD dwOutputBufLen = dwCacheBufLen;
+
+		DWORD  dwPreparedDataLen = 0;
+		bool bFunRet = m_pDataParserHandle->PrepareData(m_encryptType, m_compressType,
+			pInputData, dwPacketBodyLen, pbyPacketBodyData, dwOutputBufLen,
+			pCacheBuf, dwCacheBufLen, dwPreparedDataLen);
+		if (!bFunRet)
+		{
+			FreeCXBufferObj(pInputBuf);
+            if (!bUseThreadCache)
+                FreeBuffer(pCacheBuf);
+			FreeCXBufferObj(pBufObj);
+			return false;
+		}
+        else
+        {
+            FreeCXBufferObj(pInputBuf);
+            if (!bUseThreadCache)
+                FreeBuffer(pCacheBuf);
+        }
+
+		dwPacketLen = dwPreparedDataLen + sizeof(CXPacketHeader);
+		dwPacketBodyLen = dwPreparedDataLen;
+		pBufObj->nSequenceNum = pInputBuf->nSequenceNum;
+		pBufObj->wsaBuf.len = dwPacketLen;
+
+		return SendAssembledPacket(pBufObj, dwOrignDataLen);
+	}
+
+	//send the assembled packet
+	//the pBufObj will be freed inside this function, the caller not need to free it
+	bool CXConnectionObject::SendAssembledPacket(PCXBufferObj pBufObj, DWORD dwOrignDataLen)
+	{
+		DWORD dwPacketBodyLen = pBufObj->wsaBuf.len - sizeof(CXPacketHeader);
+		byte* pbyPacketBodyData = (byte*)(pBufObj->wsaBuf.buf + sizeof(CXPacketHeader));
+
+		DWORD dwCheckSum = 0;
+		for (DWORD i = 0; i < dwPacketBodyLen; i++)
+		{
+			dwCheckSum += (unsigned int)pbyPacketBodyData[i];
+		}
+
+		//send the header
+		PCXPacketHeader pTcpHeader = (PCXPacketHeader)pBufObj->wsaBuf.buf;
+		pTcpHeader->dwDataLen = dwPacketBodyLen;
+		pTcpHeader->dwCheckSum = dwCheckSum;
+		pTcpHeader->wFlag = CX_PACKET_HEADER_FLAG;
+		pTcpHeader->byCompressFlag = (byte)m_compressType;
+		pTcpHeader->byEncryptFlag = (byte)m_encryptType;
+		pTcpHeader->dwOrignDataLen = dwOrignDataLen;
+
+		DWORD dwSentLen = 0;
+		int iRet = PostSend(pBufObj, false);
+		//int iRet = PostSendBlocking(pBufObj, dwSentLen, false);
+		//FreeCXBufferObj(pBufObj);
+		if (iRet != 0)
+		{
+			return false;
+		}
+		return true;
+	}
+
     void CXConnectionObject::LockSend()
     {
         m_lockSend.Lock();
@@ -1137,7 +1387,7 @@ namespace CXCommunication
 
     void CXConnectionObject::RecordReleasedTime()
     {
-        m_tmReleasedTime = GetTickCountValue();
+        m_tmReleasedTime = GetCurrentTimeMS();
     }
 
     // get the current time
@@ -1190,32 +1440,36 @@ namespace CXCommunication
 
 	//if the message is not the next need-processed message, will add it in the list,
 	//process the unpacked message,use the object to prcess the next message
+	//pMes: maybe NULL, if need to the left message 
 	int CXConnectionObject::ProcessUnpackedMessage(PCXMessageData pInputMes)
 	{
 		int iRet = RETURN_SUCCEED;
-
-		if (pInputMes == NULL || m_pRPCObjectManager==NULL || m_lpServer == NULL)
+		char szInfo[1024] = { 0 };
+		if (m_pRPCObjectManager==NULL || m_lpServer == NULL)
 		{
 			return INVALID_PARAMETER;
 		}
 
 		CXRPCObjectManager *pRpcManager = (CXRPCObjectManager*)m_pRPCObjectManager;
-
 		m_lockSend.Lock();
-		if (!PushMessage(pInputMes))
+		if (pInputMes != NULL)
 		{
-			m_lockSend.Unlock();
-			Lock();
-			CXCommunicationServer *pServer = (CXCommunicationServer *)m_lpServer;
-			pServer->CloseConnection(*this, ERROR_IN_PROCESS, false);
-			//ProcessConnectionError(this);
-			UnLock();
-			return -2;
+			if (!PushMessage(pInputMes))
+			{
+				m_lockSend.Unlock();
+				Lock();
+				CXCommunicationServer *pServer = (CXCommunicationServer *)m_lpServer;
+				pServer->CloseConnection(*this, ERROR_IN_PROCESS, false);
+				//ProcessConnectionError(this);
+				UnLock();
+				return -2;
+			}
 		}
 
 		bool bNeedClose = false;
 		ConnectionClosedType emClosedType = NORMAL;
 		CXGuidObject guidObj(false);
+		bool bAsyncCall = false;
 
 		PCXMessageData pCurMes = m_plstMessageHead;
 		if (pCurMes == NULL)
@@ -1223,21 +1477,53 @@ namespace CXCommunication
 			m_lockSend.Unlock();
 			return iRet;
 		}
-		
+
+        if (pInputMes != NULL)
+        {
+            sprintf_s(szInfo, 1024, "Input mes, iSequenceNum=%lld,last iSequenceNum=%lld,conid=%lld\n",
+                pInputMes->iSequenceNum, m_uiLastProcessedMessageSequenceNum, this->GetConnectionIndex());
+            //m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+        }
+        else
+        {
+            sprintf_s(szInfo, 1024, "Input mes, iSequenceNum=%lld,last iSequenceNum=%lld,conid=%lld\n",
+                pCurMes->iSequenceNum, m_uiLastProcessedMessageSequenceNum, this->GetConnectionIndex());
+            //m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+        }
+
 		while (pCurMes->iSequenceNum==(m_uiLastProcessedMessageSequenceNum+1))
 		{
 			int64 iBeginTimeInProcess = GetCurrentTimeMS(NULL);
 
+            sprintf_s(szInfo, 1024, "process mes ,iSequenceNum=%lld,last iSequenceNum=%lld,conid=%lld\n",
+                pCurMes->iSequenceNum, m_uiLastProcessedMessageSequenceNum, this->GetConnectionIndex());
+            //m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
 			CXConnectionSession * pSession = (CXConnectionSession*)GetSession();
 			string strObjectGuid = guidObj.ConvertGuid(pCurMes->bodyData.byObjectGuid);
+            string strRequestID = guidObj.ConvertGuid(pCurMes->bodyData.byRequestID);
 
+            CXRPCObjectServer * pObjectServer = NULL;
+			bAsyncCall = false;
 			if (strObjectGuid != "")
 			{
-				CXRPCObjectServer * pObjectServer = NULL;
 				if (pSession != NULL)
 				{
 					pSession->Lock();
-					pObjectServer = (CXRPCObjectServer *)pSession->GetData(strObjectGuid, false);
+					pObjectServer = (CXRPCObjectServer *)pSession->FindObject(strObjectGuid, false);
+
+                    if (pObjectServer==NULL && this->IsProxyConnection())
+                    {
+                        //the server generate a new object for this proxy request
+                        pObjectServer = (CXRPCObjectServer *)PopRPCObj(strRequestID,false);
+                        if (pObjectServer != NULL)
+                        {
+                            this->SetObjectID(pCurMes->bodyData.byObjectGuid);
+                            pSession->RemoveObject(pObjectServer->GetObjectID(), false);
+                            pSession->AddObject(strObjectGuid, (void*)pObjectServer, false);
+                            ((CXRPCObjectClientInServer*)pObjectServer)->SetAlignedIDWithServer(true);
+                        }
+                    }
 				}
 
 				if (pObjectServer != NULL)
@@ -1247,27 +1533,35 @@ namespace CXCommunication
 				}
 				else
 				{
-					pObjectServer = pRpcManager->GetRPCObject(strObjectGuid);
+                    //in here , strObjectGuid is the class id of a class of object
+					pObjectServer = pRpcManager->GetFreeObject(strObjectGuid);
 					if (pObjectServer != NULL)
 					{
 						if (!pObjectServer->IsUniqueInstance())
 						{
-							if (pSession != NULL)
-								pSession->SetData(strObjectGuid, (void*)pObjectServer, false);
-							pObjectServer->SetSession(pSession);
+                            if (pSession != NULL)
+                            {
+                                //change to the real object id
+                                strObjectGuid = pObjectServer->GetObjectID();
+                                pSession->AddObject(strObjectGuid, (void*)pObjectServer, false);
+                                //change the request object guid to the read object id 
+                                memcpy(pCurMes->bodyData.byObjectGuid, pObjectServer->GetObjectIDBytes(), CX_GUID_LEN);
+                                sprintf_s(szInfo, 1024, "Create the object %s\n", strObjectGuid.c_str());
+                                m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
+                            }
 						}
 						pObjectServer->SetLogHandle(GetLogHandle());
 						pObjectServer->SetJournalLogHandle(GetJournalLogHandle());
 						pObjectServer->SetIOStat(GetIOStat());
+                        pObjectServer->SetCommunicationServer(this->GetServer());
 					}
 					else //unknown object
 					{
-						char szInfo[1024] = { 0 };
 						sprintf_s(szInfo, 1024, "Not found the object %s, maybe not registered\n", strObjectGuid.c_str());
 						m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
 
 						strObjectGuid = "{0307F567-72FC-4355-8192-9E37DC766D2E}";
-						pObjectServer = pRpcManager->GetRPCObject(strObjectGuid);
+						pObjectServer = pRpcManager->GetFreeObject(strObjectGuid);
 
 						if (pObjectServer)
 						{
@@ -1283,21 +1577,39 @@ namespace CXCommunication
 
 				if (pObjectServer != NULL)
 				{
+					m_bAsynchronouslyMes = false;
+					m_bAsyncPrepareData = false;
+					if (m_encryptType!= CXDataParserImpl::CXENCRYPT_TYPE_NONE 
+						|| m_compressType != CXDataParserImpl::CXCOMPRESS_TYPE_NONE)
+					{
+						m_bAsyncPrepareData = true;
+					}
+                    
 					iRet = pObjectServer->ProcessMessage(pCurMes);
 					if (iRet != RETURN_SUCCEED)
 					{
-						printf("Process message fails\n");
-						if (iRet == -2)
+						if (iRet == CXRET_ASYNC_CALLBACK)
 						{
+                            bAsyncCall = true;
+						}
+                        else
+                        {
 							bNeedClose = true;
 							emClosedType = ERROR_IN_PROCESS;
-						}
+							printf("Process message fails\n");
+                        }
+					}
+
+					// this process had gived to a asynchronous call, maybe give to third party, maybe give to a task thread.
+					// the message can not been free
+					if (m_bAsynchronouslyMes)
+					{
+						bAsyncCall = true;
 					}
 				}
 			}
 			else
 			{
-				char szInfo[1024] = { 0 };
 				sprintf_s(szInfo, 1024, "Receive a incorrect packet, the object guid is empty\n");
 				m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
 
@@ -1305,28 +1617,41 @@ namespace CXCommunication
 				emClosedType = ERROR_IN_PROCESS;
 			}
 
-			//OutputJournal(pCurMes,iBeginTime);
-			ReduceReceivedPacketNumber();
-
-			//<Process the closing event of this socket>
-			//pCon->Lock();
-
-			m_uiLastProcessedMessageSequenceNum++;
 			m_plstMessageHead = pCurMes->pNext;
 			if (m_plstMessageHead == NULL)
 			{
 				m_plstMessageEnd = NULL;
 			}
 
-            char szInfo[1024] = { 0 };
-            uint64 uiSequenceNum = pCurMes->iSequenceNum;
-            sprintf_s(szInfo, 1024, "End to process message,SequenceNum:%lld, connection index:%lld,pCurMes:%x\n",
-                uiSequenceNum, GetConnectionIndex(), pCurMes);
-           // m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
+			// this process had gived to a asynchronous call, maybe give to third party, maybe give to a task thread.
+			// the message can not been free
+			if (bAsyncCall)
+			{
+				break;
+			}
 
+            
+            uint64 uiSequenceNum = pCurMes->iSequenceNum;
+            
+			ReduceReceivedPacketNumber();
+			m_uiLastProcessedMessageSequenceNum++;
 			FreeBuffer(pCurMes);
 
+			//char szInfo[1024] = { 0 };
+			//sprintf_s(szInfo, 1024, "End to process message,sequenceNum:%lld,last sequenceNum:%lld connection index:%lld,message code:%d\n",
+			//	uiSequenceNum, m_uiLastProcessedMessageSequenceNum, GetConnectionIndex(), pCurMes->bodyData.dwMesCode);
+			//m_pJournalLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
+
 			m_lockSend.Unlock();
+
+            if (pObjectServer != NULL && pObjectServer->IsNeedToDestroy())
+            {
+                if (pRpcManager != NULL)
+                {
+                    pObjectServer->Destroy();
+                    pRpcManager->FreeObject(pObjectServer);
+                }
+            }
 
 			if (bNeedClose)
 			{
@@ -1355,8 +1680,8 @@ namespace CXCommunication
 				}
 			}
 
-            sprintf_s(szInfo, 1024, "End to process message2,SequenceNum:%lld, connection index:%lld,pCurMes:%x\n",
-                uiSequenceNum, GetConnectionIndex(), pCurMes);
+            //sprintf_s(szInfo, 1024, "End to process message2,SequenceNum:%lld, connection index:%lld,pCurMes:%x\n",
+            //    uiSequenceNum, GetConnectionIndex(), pCurMes);
             //m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
 
 			m_lockSend.Lock();
@@ -1541,7 +1866,7 @@ namespace CXCommunication
 
 #ifdef WIN32
 			DWORD dwSend = 0;
-			m_uiNumberOfPostBuffers++;
+            m_uiPostedSentBuffers++;
 			nRet = -1;
 			if (WSASend(m_sock, &pCurBuf->wsaBuf, 1, &dwSend, 0, &pCurBuf->ol, NULL) != 0)
 			{
@@ -1551,7 +1876,7 @@ namespace CXCommunication
 					bNeedClose = true;
 					emClosedType = SOCKET_CLOSED;
 					nRet = -3;
-					m_uiNumberOfPostBuffers--;
+                    m_uiPostedSentBuffers--;
 					//m_uiLastSentPacketSequenceNum++;
 					//break;
 				}
@@ -1693,4 +2018,271 @@ namespace CXCommunication
 		//	m_lockSend.Unlock();
 		return nRet;
 	}
+
+    //get a sending buffer to write data, use it to send 
+    PCXBufferObj CXConnectionObject::GetSendCXBufferObj(DWORD dwSize)
+    {
+        PCXBufferObj pBufObj = NULL;
+		DWORD dwBufSize = dwSize + (sizeof(CXBufferObj) - CX_BUF_SIZE) + sizeof(CXPacketData) - 1;
+		/*
+        if (m_encryptType != CXDataParserImpl::CXENCRYPT_TYPE_NONE ||
+            m_compressType != CXDataParserImpl::CXCOMPRESS_TYPE_NONE)
+        {
+            CXCommunicationServer *pComServer = (CXCommunicationServer *)m_lpServer;
+            pBufObj = (PCXBufferObj)pComServer->GetFirstThreadCache(dwBufSize);
+            if (pBufObj == NULL)
+            {
+                return NULL;
+            }
+        }
+        else
+        {
+            pBufObj = (PCXBufferObj)m_lpCacheObj->GetBuffer(dwBufSize);
+            if (pBufObj == NULL)
+            {
+                return NULL;
+            }
+        }
+		*/
+
+		pBufObj = (PCXBufferObj)m_lpCacheObj->GetBuffer(dwBufSize);
+		if (pBufObj == NULL)
+		{
+			return NULL;
+		}
+
+        pBufObj->pConObj = (void*)this;
+        pBufObj->wsaBuf.len = CX_BUF_SIZE;
+        pBufObj->wsaBuf.buf = pBufObj->buf;
+        pBufObj->iBufSize = CX_BUF_SIZE;
+		return pBufObj;
+    }
+
+    void CXConnectionObject::FreeSendCXBufferObj(PCXBufferObj pBuf)
+    { 
+		/*
+        CXCommunicationServer *pComServer = (CXCommunicationServer *)m_lpServer;
+        PCXBufferObj pBufObj = (PCXBufferObj)pComServer->GetFirstThreadCache(1);
+        if (pBufObj == pBuf)
+        {
+            return ;
+        }
+		*/
+        m_lpCacheObj->FreeBuffer(pBuf); 
+    }
+
+    //get the writable data pointer in the CXBufferObj , use to write data
+    byte* CXConnectionObject::GetWritableBuffer(PCXBufferObj pBufObj)
+    {
+        DWORD dwFrontSize = sizeof(CXPacketData) - 1;
+        if (pBufObj->iBufSize <= dwFrontSize)
+            return NULL;
+        return (byte*)(pBufObj->wsaBuf.buf + dwFrontSize);
+    }
+
+	//when a asynchronous task had been finished, will call this function to process 
+	//iTaskType: ==1 parsed data, uncompress and decrypt
+	//           ==2 prepare data, compress and encrypt
+	//           ==3 time-consuming calculation
+	//           ==4 connect to remote peer and sent data
+	int  CXConnectionObject::CallbackTaskProcess(int iProcessRet, int iTaskType, PCXMessageData pMes, string strRequestID)
+	{
+		int iRet = RETURN_SUCCEED;
+		switch ((CXTaskBase::CX_RUNING_TASK_TYPE)iTaskType)
+		{
+		case CXTaskBase::CX_RUNING_TASK_TYPE_PARSE_DATA://parse data
+		{
+			if (iProcessRet != 0)
+			{
+				char szInfo[1024] = { 0 };
+				sprintf_s(szInfo, 1024, "Failed to parse the packet data,close this connection,connection id=%lld,error code is %d,desc is '%s'\n",
+					GetConnectionIndex(), errno, strerror(errno));
+				m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+
+				ConnectionClosedType emClosedType = SOCKET_CLOSED;
+				bool bNeedClose = false;
+				bNeedClose = true;
+				emClosedType = ERROR_IN_PROCESS;
+				if (!bNeedClose)
+				{
+					if (GetState() == CXConnectionObject::CLOSING)//closing
+					{
+						bNeedClose = true;
+					}
+					else if (GetState() >= CXConnectionObject::CLOSED)//closed
+					{
+						return RETURN_SUCCEED;
+					}
+				}
+
+				if (bNeedClose)
+				{
+					if (GetState() >= CXConnectionObject::CLOSED)//closed
+					{
+						return RETURN_SUCCEED;
+					}
+					CXCommunicationServer *pComServer = (CXCommunicationServer *)m_lpServer;
+					pComServer->CloseConnection(*this, emClosedType);
+				}
+			}
+			break;
+		}
+		case CXTaskBase::CX_RUNING_TASK_TYPE_PREPARE_DATA: // prepare data, compress and encrypt
+		{
+            if (pMes == NULL && strRequestID =="")
+                return RETURN_SUCCEED;
+
+            if (pMes != NULL)//this message is myself received message, need to free it
+            {
+				pMes->dwType = 2;
+				PushReceivedMessage(pMes,false);
+            }
+            else
+            {
+                PopRPCObj(strRequestID);
+            }
+
+			break;
+		}
+		default:
+			break;
+		}
+		
+		return iRet;
+	}
+
+	int  CXConnectionObject::ProcessAsyncMessageEnd(PCXMessageData pMessageData)
+	{
+		if (pMessageData==NULL)
+		{
+			return INVALID_PARAMETER;
+		}
+
+		CXGuidObject guidObj(false);
+		
+		CXConnectionSession * pSession = (CXConnectionSession*)GetSession();
+		string strObjectGuid = guidObj.ConvertGuid(pMessageData->bodyData.byObjectGuid);
+
+		if (strObjectGuid != "")
+		{
+			CXRPCObjectServer * pObjectServer = NULL;
+			CXRPCObjectManager *pRpcManager = (CXRPCObjectManager*)m_pRPCObjectManager;
+			pObjectServer = pRpcManager->GetStaticObject(strObjectGuid);
+			if (pObjectServer != NULL)
+			{
+				pObjectServer->SetLogHandle(GetLogHandle());
+				pObjectServer->SetJournalLogHandle(GetJournalLogHandle());
+				pObjectServer->SetIOStat(GetIOStat());
+			}
+			else //unknown object
+			{
+				strObjectGuid = "{0307F567-72FC-4355-8192-9E37DC766D2E}";
+				pObjectServer = pRpcManager->GetStaticObject(strObjectGuid);
+				if (pObjectServer)
+				{
+					pObjectServer->SetLogHandle(GetLogHandle());
+					pObjectServer->SetJournalLogHandle(GetJournalLogHandle());
+					pObjectServer->SetIOStat(GetIOStat());
+				}
+			}
+			if (pObjectServer!=NULL)
+			{
+				pObjectServer->AsynCallbackResult(pMessageData);
+			}
+		}
+
+		int iRet = RETURN_SUCCEED;
+		m_lockSend.Lock();
+		ReduceReceivedPacketNumber();
+		m_uiLastProcessedMessageSequenceNum++;
+		m_lockSend.Unlock();
+
+		if (pMessageData->iProcessedRet ==-2) //need to closed this connection
+		{
+			Lock();
+			CXCommunicationServer *pServer = (CXCommunicationServer *)m_lpServer;
+			pServer->CloseConnection(*this, ERROR_IN_PROCESS, false);
+			UnLock();
+		}
+		else
+		{
+			Lock();
+			if (GetState() >= CXConnectionObject::CLOSING)//closing
+			{
+				CXCommunicationServer *pServer = (CXCommunicationServer *)m_lpServer;
+				pServer->CloseConnection(*this, SOCKET_CLOSED, false);
+			}
+			UnLock();
+		}
+
+		return iRet;
+	}
+
+	void CXConnectionObject::PushRPCObj(string strPacketGuid, void* pObj, bool bLockBySelf)
+	{
+	    if(bLockBySelf)
+            m_lockSend.Lock();
+		m_mapRPCObj[strPacketGuid] = pObj;
+		if(bLockBySelf)
+            m_lockSend.Unlock();
+	}
+	void* CXConnectionObject::PopRPCObj(string strPacketGuid, bool bLockBySelf)
+	{
+		void *pObj = NULL;
+		if(bLockBySelf)
+            m_lockSend.Lock();
+		map<string, void*>::iterator it = m_mapRPCObj.find(strPacketGuid);
+		if (it != m_mapRPCObj.end())
+		{
+			pObj = it->second;
+            m_mapRPCObj.erase(it);
+		}
+		if(bLockBySelf)
+            m_lockSend.Unlock();
+
+		return pObj;
+	}
+
+    //get the rpc object from the map
+    void* CXConnectionObject::GetRPCObj(string strPacketGuid, bool bLockBySelf)
+    {
+        void *pObj = NULL;
+        if(bLockBySelf)
+            m_lockSend.Lock();
+        map<string, void*>::iterator it = m_mapRPCObj.find(strPacketGuid);
+        if (it != m_mapRPCObj.end())
+        {
+            pObj = it->second;
+        }
+        if(bLockBySelf)
+            m_lockSend.Unlock();
+
+        return pObj;
+    }
+
+	void CXConnectionObject::FreeSendingList()
+	{
+		m_lockSend.Lock();
+		PCXBufferObj pCurBuf = m_pListSendBuf;
+		if (pCurBuf == NULL)
+		{
+			m_lockSend.Unlock();
+			return;
+		}
+
+		while (pCurBuf!=NULL)
+		{
+			m_pListSendBuf = pCurBuf->pNext;
+			FreeSendCXBufferObj(pCurBuf);
+
+			if (m_pListSendBuf == NULL)
+			{
+				m_pListSendBufEnd = NULL;
+				break;
+			}
+			pCurBuf = m_pListSendBuf;
+		}
+		m_lockSend.Unlock();
+	}
+
 }

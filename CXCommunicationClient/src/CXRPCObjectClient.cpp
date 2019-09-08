@@ -23,6 +23,7 @@ Description£º
 #include <map>
 #include <chrono>
 #include <ctime>
+#include "PlatformFunctionDefine.h"
 
 #ifdef WIN32
 #else
@@ -66,9 +67,9 @@ void CXRPCObjectClient::SetRemoteServerInfo(string strRemoteIP, unsigned short u
     m_cxSession.SetRemoteAddress(addr);
 }
 
-void CXRPCObjectClient::GetObjectGuid()
+void CXRPCObjectClient::GetClassGuid()
 {
-	string strName = GetObjectName();
+	string strName = GetObjectClassName();
 	map<string, string>::const_iterator  it = g_mapRPCObjectGuid.find(strName);
 	if (it != g_mapRPCObjectGuid.end())
 	{
@@ -110,4 +111,10 @@ int64 CXRPCObjectClient::GetCurrentTimeMS(char *pszTimeString)
     }
 
     return (int64)tp.time_since_epoch().count();
+}
+
+void CXRPCObjectClient::SetUsedMemoryCachePool(bool bSet, CXMemoryCacheManager* pCacheObj)
+{
+	m_cmmClient.SetUsedMemoryCachePool(bSet, pCacheObj);
+	m_dataClient.SetUsedMemoryCachePool(bSet, pCacheObj);
 }

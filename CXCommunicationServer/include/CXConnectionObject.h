@@ -41,6 +41,8 @@ namespace CXCommunication
             {
                 //not accepted a socket
                 INITIALIZED=0,
+				//this connection is creating
+				CREATING,
                 //accepted a socket,but need to check the effectiveness of the source
                 PENDING,
                 //accepted the socket, and the source is effective, and allowed to receive and send data
@@ -57,7 +59,13 @@ namespace CXCommunication
             void Reset();
             void Lock();
             void UnLock();
-            void Build(cxsocket sock,uint64 uiConnIndex,sockaddr_in addr);
+
+			//sock: socket value, if is equal 0, show that this connection have not been created
+            void Build(cxsocket sock,uint64 uiConnIndex, const string &strRemoteIp, WORD wRemotePort);
+
+			//the socket have been created, set the accepted time
+			void OnCreated(cxsocket sock);
+
 			//record the time of the last received packet
             void RecordCurrentPacketTime();
 
@@ -86,8 +94,10 @@ namespace CXCommunication
 			//return value: ==-2 the read list has some error
 			//              ==-3 occur error when allocat memory
 			//              ==-4 received a incorrect packet
-            int    RecvPacket(PCXBufferObj pBufObj,DWORD dwTransDataOfBytes, byte* pbyThreadCache,
-				DWORD dwCacheLen,bool bLockBySelf = true);
+            int    RecvPacket(PCXBufferObj pBufObj,DWORD dwTransDataOfBytes,bool bLockBySelf = true);
+
+			//push received message to message queue
+			void   PushReceivedMessage(PCXMessageData pMes,bool bAddRes=true);
 
             //verify the check sum of the message data
             bool   VerifyPacketBodyData(PCXPacketHeader pHeader,byte *pData);
@@ -114,9 +124,11 @@ namespace CXCommunication
             void  AddReceivedPacketNumber();
             void  ReduceReceivedPacketNumber();
 
-            void  ReduceNumberOfPostBuffers();
+            void  ReduceNumberOfPostedSentBuffers();
+            void  ReduceNumberOfPostedRecvBuffers();
 
-            uint64 GetNumberOfPostBuffers() { return m_uiNumberOfPostBuffers; }
+            uint64 GetPostedSentBuffersNumber() { return m_uiPostedSentBuffers; }
+            uint64 GetPostedRecvBuffersNumber() { return m_uiPostedRecvBuffers; }
 
             void SetState(CONNECTION_STATE emState) { m_nState= emState; }
             CONNECTION_STATE GetState() { return m_nState; }
@@ -139,7 +151,27 @@ namespace CXCommunication
             CXLog *GetLogHandle() { return m_pLogHandle; }
 
             //send a packet to the peer
-            bool  SendPacket(const byte* pbData,DWORD dwLen,DWORD dwMesCode, bool bLockBySelf = true);
+			//pbData: the data needed to send
+            //dwLen:  the data size of the CXPacketBodyData.buf.
+			//pMes:   the received message in this event from own connection, if NULL , this function will call by other object internally
+            bool  SendPacket(const byte* pbData,DWORD dwLen,DWORD dwMesCode, PCXMessageData pMes = NULL, bool bLockBySelf = false);
+
+			//send a packet to the peer
+			//the pBufObj will be freed inside this function, the caller not need to free it
+			//pBufObj: input packet buffer, must be allocate from memory cache
+			//dwLen:   the data size of the CXPacketBodyData.buf.
+			//pMes:    the received message in this event from own connection, if NULL , this function will call by other object internally
+            bool  SendPacket(PCXBufferObj pBufObj, DWORD dwLen, DWORD dwMesCode, PCXMessageData pMes=NULL,
+                bool bLockBySelf = false);
+
+            //compress and encrypt the data, send it
+			//the pBufObj will be freed inside this function, the caller not need to free it
+			bool  PreparedAndSendPacket(PCXBufferObj pInputBuf, PCXMessageData pMes = NULL);
+
+			//build the header and send the assembled packet, 
+			//the pBufObj will be freed inside this function, the caller not need to free it
+			bool  SendAssembledPacket(PCXBufferObj pBufObj, DWORD dwOrignDataLen);
+
             void  LockSend();
             void  UnlockSend();
 
@@ -174,6 +206,7 @@ namespace CXCommunication
 
 			//if the message is not the next need-processed message, will add it in the list,
 			//process the unpacked message,use the object to prcess the next message
+			//pMes: maybe NULL, if need to the left message 
 			int    ProcessUnpackedMessage(PCXMessageData pMes);
 
 			//push this message in the message list, sorted by the sequence number of the message
@@ -194,6 +227,66 @@ namespace CXCommunication
 			//             ==-4 failed to modify the epoll event for this connection
 			int SendDataList();
 
+			bool ParseMessage(PCXMessageData pMessageData, CXPacketHeader &packetHeader);
+
+            //get a sending buffer to write data, use it to send,
+            //if this packet need to compress or encrypt, convern the first thread cache to the PCXBufferObj
+            PCXBufferObj GetSendCXBufferObj(DWORD dwSize);
+            //if pBuf is the the first thread cache, not need to free
+            void FreeSendCXBufferObj(PCXBufferObj pBuf);
+
+            //get the writable data pointer in the CXBufferObj , use to write data
+            byte* GetWritableBuffer(PCXBufferObj pBufObj);
+
+            //==true, this connection is a proxy connection, start to third party by myself.
+            bool IsProxyConnection() { return m_bProxyConnection; }
+            void SetProxyConnection(bool bSet) { m_bProxyConnection= bSet; }
+
+            string GetRemoteIP() { return m_strRemoteIP; }
+            WORD   GetRemotePort() { return m_wRemotePort; }
+
+			//when a asynchronous task had been finished, will call this function to process£¬
+			//iTaskType: ==1 parsed data, uncompress and decrypt, pMes: NULL
+			//           ==2 prepare data, compress and encrypt,
+			//           ==3 time-consuming calculation
+			//           ==4 connect to remote peer and sent data, pData: the packet guid string
+            //pMes: == not empty, this message is myself received message, need to free it
+            //      == NULL, strPacketGuid must be not empty, need to notify the another object to process
+			int  CallbackTaskProcess(int iProcessRet, int iTaskType, PCXMessageData pMes=NULL, string strPacketGuid="");
+
+			//when a asynchronous message process had been finished, will call this function to process 
+			int  ProcessAsyncMessageEnd(PCXMessageData pMessageData);
+
+			void SetEncryptType(CXDataParserImpl::CXENCRYPT_TYPE type) { m_encryptType= type; }
+			void SetCompressType(CXDataParserImpl::CXCOMPRESS_TYPE type) { m_compressType = type; }
+			CXDataParserImpl::CXENCRYPT_TYPE GetEncryptType() { return m_encryptType; }
+			CXDataParserImpl::CXCOMPRESS_TYPE GetCompressType() { return m_compressType; }
+
+			void SetTaskPool(void *pVoid) { m_pTaskPool=pVoid; }
+			void*GetTaskPool() { return m_pTaskPool; }
+
+			//==true: this message had been processed asynchronously
+			bool IsThisMesAsynchronous(){ return m_bAsynchronouslyMes; }
+            void SetThisMesAsynchronous(bool bSet) { m_bAsynchronouslyMes= bSet; }
+
+			void SetAsynchronouslyPrepareData(bool bSet) { m_bAsyncPrepareData = bSet; }
+			bool IsAsynchronouslyPrepareData() { return m_bAsyncPrepareData; }
+
+			void SetContinuousProcessing(bool bSet) { m_bContinuousProcessing = bSet; }
+			bool IsContinuousProcessing() { return m_bContinuousProcessing; }
+
+			//push a key-value pair in the map
+			void   PushRPCObj(string strPacketGuid, void* pObj, bool bLockBySelf = false);
+
+			//pop the key-value pair from the map
+			void*  PopRPCObj(string strPacketGuid, bool bLockBySelf = false);
+
+            //get the rpc object from the map
+            void*  GetRPCObj(string strPacketGuid, bool bLockBySelf = false);
+
+			void   FreeSendingList();
+			void   SetRequestID(byte byRequestID[]) { memcpy(m_byRequestID, byRequestID, CX_GUID_LEN); }
+			void   SetObjectID(byte byObjectID[]) { memcpy(m_byObjectID, byObjectID, CX_GUID_LEN); }
         protected:
         private:
             cxsocket m_sock;
@@ -224,7 +317,8 @@ namespace CXCommunication
             uint64  m_tmLastPacketTime;
 
             //the client's ip address and port
-            sockaddr_in m_addrRemote;
+            string  m_strRemoteIP;
+            WORD    m_wRemotePort;
 
             // class object pointer, communication server
             void* m_lpServer;
@@ -264,8 +358,11 @@ namespace CXCommunication
             // the number of the received packets in the message queue
             uint64 m_uiNumberOfReceivedPacketInQueue;
 
-            // the number of the buffer by posting to iocp model
-            uint64 m_uiNumberOfPostBuffers;
+            // the number of the sent buffer by posting to iocp model
+            uint64 m_uiPostedSentBuffers;
+
+            // the number of the received buffer posted to iocp model
+            uint64 m_uiPostedRecvBuffers;
 
 			//the sequence number of the last unpacked message,
 			//this sequence number will be filled in the message structure CXMessageData,
@@ -314,6 +411,47 @@ namespace CXCommunication
 
             CXDataParserImpl::CXENCRYPT_TYPE  m_encryptType;
             CXDataParserImpl::CXCOMPRESS_TYPE  m_compressType;
+
+            //==true, this connection is a proxy connection, start to third party by myself.
+            bool m_bProxyConnection;
+
+			// the header of the inner message list
+			PCXMessageData m_plstInnerMessageHead;
+
+			// the end of the inner message list
+			PCXMessageData m_plstInnerMessageEnd;
+
+			//task pool pointer
+			void *         m_pTaskPool;
+
+			//use task pool to parse the received packet, uncompress and decrypt it asynchronously
+			bool           m_bAsyncParseData;
+
+			//use task pool to process the data needed to send, compress and encrypt it asynchronously
+			bool           m_bAsyncPrepareData;
+
+			// this message had been processed asynchronously
+			bool           m_bAsynchronouslyMes;
+
+			// this connection is continuous processing some message in a rpc object
+			bool           m_bContinuousProcessing;
+
+			// the continous rpc object pointer
+			void          *m_pContinuousRPCObj;
+
+			// the  decontinuous rpc object map
+			// key: packet guid
+			// value: rpc object pointer
+			map<string, void*> m_mapRPCObj;
+
+            // the internal session , another object request this connection for some thing,
+            // this connection need to reply the another object
+            // key:   the packet guid of the request
+            // value: the connection index of the requested object
+            map<string, int64> m_mapInternalPacket;
+
+			byte           m_byObjectID[CX_GUID_LEN];
+			byte           m_byRequestID[CX_GUID_LEN];
     };
 
 }

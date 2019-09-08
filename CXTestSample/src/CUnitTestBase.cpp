@@ -20,7 +20,7 @@ using namespace std;
 
 #include <chrono>
 #include <ctime>
-
+#include "PlatformFunctionDefine.h"
 CUnitTestBase::CUnitTestBase()
 {
 }

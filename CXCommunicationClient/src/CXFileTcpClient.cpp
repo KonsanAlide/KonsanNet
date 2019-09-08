@@ -30,7 +30,7 @@ Description£º
 using namespace CXCommunication;
 CXFileTcpClient::CXFileTcpClient()
 {
-	GetObjectGuid();
+	GetClassGuid();
 	m_cmmClient.SetRPCObjectGuid(m_byObjectGuid);
 	m_dataClient.SetRPCObjectGuid(m_byObjectGuid);
 }
@@ -144,6 +144,10 @@ int CXFileTcpClient::Open(string strRemoteFilePath, OPENTYPE type, bool bOpenExi
         m_dataClient.Close();
         return -8;
     }
+
+    byte byNewObjectID[CX_GUID_LEN] = {0};
+    m_cmmClient.GetRPCObjectGuid(byNewObjectID);
+    m_dataClient.SetRPCObjectGuid(byNewObjectID);
     
     m_bIsOpened = true;
     return RETURN_SUCCEED;
@@ -160,7 +164,7 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
         return -2;
     }
 
-    m_cmmClient.SendHeartPacket();
+    //m_cmmClient.SendHeartPacket();
   
     byte *pData = m_byPacketData;
     memset(pData, 0, CLIENT_BUF_SIZE);
@@ -213,7 +217,7 @@ int  CXFileTcpClient::Read(byte* pBuf, int iWantReadLen, int *piReadLen)
         return -6;
     }
 
-    if (pReply->dwDataLen > iWantReadLen)
+    if (pReply->dwDataLen > (DWORD)iWantReadLen)
     {
         DWORD dwEr = GetLastError();
         Close();

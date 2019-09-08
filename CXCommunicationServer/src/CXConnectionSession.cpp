@@ -20,6 +20,7 @@ Description£º
 #include <memory.h>
 #include <time.h>
 #include "CXRPCObjectServer.h"
+#include "CXRPCObjectManager.h"
 namespace CXCommunication
 {
     CXConnectionSession::CXConnectionSession()
@@ -29,6 +30,7 @@ namespace CXCommunication
         m_strVerificationCode = "";
         m_tmBeginOfVerification=0;
         m_iTimeOutSecondsOfVerification=0;
+		m_pObjectsPool = NULL;
     }
 
     CXConnectionSession::~CXConnectionSession()
@@ -127,50 +129,60 @@ namespace CXCommunication
 
         Lock();
         CXRPCObjectServer *pObj = NULL;
-        unordered_map<string, void*>::iterator it = m_mapData.begin();
-        for (; it != m_mapData.end();)
+        unordered_map<string, void*>::iterator it = m_mapObjects.begin();
+        for (; it != m_mapObjects.end();)
         {
             pObj = (CXRPCObjectServer *)it->second;
 			if (pObj != NULL)
 			{
 				pObj->Destroy();
-				delete pObj;
+				if (m_pObjectsPool != NULL)
+				{
+					CXRPCObjectManager *pObjectsPool = (CXRPCObjectManager *)m_pObjectsPool;
+					pObjectsPool->FreeObject(pObj);
+				}
 			}
             
-            it=m_mapData.erase(it);
+            it=m_mapObjects.erase(it);
         }
         
         UnLock();
 
     }
 
-    void  CXConnectionSession::SetData(string strKey, void *pData,bool bLockBySelf)
+    void  CXConnectionSession::AddObject(string strObjectID, void *pObj,bool bLockBySelf)
     {
         if(bLockBySelf)
             Lock();
-        m_mapData[strKey] = pData;
+        m_mapObjects[strObjectID] = pObj;
         if(bLockBySelf)
             UnLock();
     }
-    void *CXConnectionSession::GetData(string strKey,bool bLockBySelf)
+    void *CXConnectionSession::FindObject(string strObjectID,bool bLockBySelf)
     {
         void *pData = NULL;
         if(bLockBySelf)
             Lock();
-        pData = m_mapData[strKey];
+
+        unordered_map<string, void*>::iterator it = m_mapObjects.find(strObjectID);
+        if (it != m_mapObjects.end())
+        {
+            pData = it->second;
+        }
+        
         if(bLockBySelf)
             UnLock();
         return pData;
     }
 
-    void CXConnectionSession::RemoveData(string strKey,bool bLockBySelf)
+    void CXConnectionSession::RemoveObject(string strObjectID,bool bLockBySelf)
     {
         if(bLockBySelf)
             Lock();
-        unordered_map<string, void*>::iterator it = m_mapData.find(strKey);
-        if (it != m_mapData.end())
+        unordered_map<string, void*>::iterator it = m_mapObjects.find(strObjectID);
+        if (it != m_mapObjects.end())
         {
-            m_mapData.erase(it);
+            m_mapObjects.erase(it);
         }
 
         if(bLockBySelf)

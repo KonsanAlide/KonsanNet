@@ -23,7 +23,8 @@ using namespace CXCommunication;
 CXSessionLevelBase::CXSessionLevelBase()
 {
     m_bIsUniqueInstance = true;
-    GetObjectGuid();
+    GetClassGuid();
+	m_strObjectGuid = m_strClassGuid;
 }
 
 
@@ -76,7 +77,6 @@ int CXSessionLevelBase::DispatchMes(PCXMessageData pMes)
     return iRet;
 }
 
-
 CXRPCObjectServer* CXSessionLevelBase::CreateObject()
 {
     return (CXRPCObjectServer*)new CXSessionLevelBase;
@@ -89,16 +89,17 @@ int CXSessionLevelBase::SendData(CXConnectionObject * pCon, const byte *pbyData,
 
 void CXSessionLevelBase::Destroy()
 {
+	Reset();
 }
 
 void CXSessionLevelBase::MessageToString(PCXMessageData pMes, string &strMes)
 {
 	char  szInfo[1024] = { 0 };
 	CXGuidObject guidObj(false);
-	string strPacketGUID = guidObj.ConvertGuid(pMes->bodyData.byPacketGuid);
+	string strRequestID = guidObj.ConvertGuid(pMes->bodyData.byRequestID);
 
 	sprintf_s(szInfo, 1024, "session message, packet_guid:%s,message_code:%04d,message length:%d",
-		strPacketGUID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
+        strRequestID.c_str(), pMes->bodyData.dwMesCode, pMes->dwDataLen);
 	strMes = szInfo;
 	
 	int iRet = RETURN_SUCCEED;
@@ -240,6 +241,7 @@ int CXSessionLevelBase::SessionLogin(PCXMessageData pMes)
                 pSession->SetSesssionGuid(strGuid);
                 pSession->ResetVerificationInfo();
                 pManager->AddUsingSession(pSession);
+				pSession->SetObjectPool(pCon->GetRPCObjectManager());
 
                 //*ppSession = pSession;
 
@@ -316,7 +318,7 @@ int CXSessionLevelBase::SessionLogin(PCXMessageData pMes)
         break;
     }
 
-    bool bRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_SESSION_LOGIN_REPLY_CODE);
+    bool bRet = pCon->SendPacket(bySendBuf, dwSendMesLen, CX_SESSION_LOGIN_REPLY_CODE, pMes);
     if (!bRet || iRet == -2) //need to close connection
     {
         return -2;

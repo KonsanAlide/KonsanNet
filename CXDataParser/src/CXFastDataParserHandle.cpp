@@ -31,6 +31,19 @@ Description£º
 #include "channels.h"
 #include "zlib.h"
 
+//file defines and implement
+#ifdef WIN32
+#include <fcntl.h>
+#include <io.h>
+#else
+#include <sys/time.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#endif
+
+
 using namespace snappy;
 using namespace CryptoPP;
 namespace CXCommunication
@@ -155,18 +168,13 @@ namespace CXCommunication
 			case CXCOMPRESS_TYPE_GZIP://gzib
             {
                 uint64 uiBegin = GetCurrentTimeMS();
-                int deflate_level = 0;
-                ArraySink *pArrDst = new ArraySink((byte*)pszOutputBuf, dwOutputBufLen);
-                Gunzip unzipper(pArrDst);
-                size_t dwRemainLen = unzipper.Put((byte*)pszInputBuf, dwInputDataLen);
-                unzipper.MessageEnd();
-
-
-                dwOutputBufLen = pArrDst->TotalPutLength();
-                if (dwOutputBufLen==0 || dwRemainLen>0)
-                {
-                    return false;
-                }
+				int iDeflateLevel = 0;
+				if (!GzipUncompressData(iDeflateLevel,(byte*)pszInputBuf, dwInputDataLen, 
+					(byte*)pszOutputBuf, dwOutputBufLen))
+				{
+					return false;
+				}
+               
                 uint64 uiEnd = GetCurrentTimeMS();
                 uint64 iUsedTime = uiEnd - uiBegin;
 
@@ -195,18 +203,13 @@ namespace CXCommunication
             case CXCOMPRESS_TYPE_ZLIB://zlib
             {
                 uint64 uiBegin = GetCurrentTimeMS();
-                int deflate_level = 0;
-                ArraySink *pArrDst = new ArraySink((byte*)pszOutputBuf, dwOutputBufLen);
-                ZlibDecompressor unzlib(pArrDst);
-                size_t dwRemainLen = unzlib.Put((byte*)pszInputBuf, dwInputDataLen);
-                unzlib.MessageEnd();
+				int iDeflateLevel = 0;
+				if (!ZlibUncompressData(iDeflateLevel, (byte*)pszInputBuf, dwInputDataLen,
+					(byte*)pszOutputBuf, dwOutputBufLen))
+				{
+					return false;
+				}
 
-
-                dwOutputBufLen = pArrDst->TotalPutLength();
-                if (dwOutputBufLen == 0 || dwRemainLen > 0)
-                {
-                    return false;
-                }
                 uint64 uiEnd = GetCurrentTimeMS();
                 uint64 iUsedTime = uiEnd - uiBegin;
                 break;
@@ -266,29 +269,14 @@ namespace CXCommunication
 			case CXCOMPRESS_TYPE_GZIP://gzip
 			{
                 uint64 uiBegin = GetCurrentTimeMS();
-                int deflate_level = 0;
-                Gzip zipper;
-                size_t dwRemainLen = zipper.Put((byte*)pszInputBuf, dwInputDataLen);
-                zipper.MessageEnd();
 
-                if (dwRemainLen > 0)
-                {
-                    return false;
-                }
-
-                word64 avail = zipper.MaxRetrievable();
-                if (avail>0 && avail< dwOutputBufLen)
-                {
-                    dwOutputBufLen = zipper.Get((byte*)pszOutputBuf, dwOutputBufLen);
-                    if (avail > dwOutputBufLen)
-                    {
-                        return false;
-                    }
-                }
-                else
-                {
-                    return false;
-                }
+				int iDeflateLevel = 0;
+				if (!GzipCompressData(iDeflateLevel, (byte*)pszInputBuf, dwInputDataLen,
+					(byte*)pszOutputBuf, dwOutputBufLen))
+				{
+					return false;
+				}
+                
                 uint64 uiEnd = GetCurrentTimeMS();
                 uint64 iUsedTime = uiEnd - uiBegin;
 				break;
@@ -303,30 +291,12 @@ namespace CXCommunication
             case CXCOMPRESS_TYPE_ZLIB://zlib
             {
                 uint64 uiBegin = GetCurrentTimeMS();
-                int deflate_level = 0;
-                ZlibCompressor zlib;
-                size_t dwRemainLen = zlib.Put((byte*)pszInputBuf, dwInputDataLen);
-                zlib.MessageEnd();
-
-                if (dwRemainLen > 0)
-                {
-                    return false;
-                }
-
-                word64 avail = zlib.MaxRetrievable();
-                if (avail > 0 && avail < dwOutputBufLen)
-                {
-                    dwOutputBufLen = zlib.Get((byte*)pszOutputBuf, dwOutputBufLen);
-                    if (avail > dwOutputBufLen)
-                    {
-                        return false;
-                    }
-                }
-                else
-                {
-                    return false;
-                }
-
+				int iDeflateLevel = 0;
+				if (!ZlibCompressData(iDeflateLevel, (byte*)pszInputBuf, dwInputDataLen,
+					(byte*)pszOutputBuf, dwOutputBufLen))
+				{
+					return false;
+				}               
                 uint64 uiEnd = GetCurrentTimeMS();
                 uint64 iUsedTime = uiEnd - uiBegin;
                 break;
@@ -560,5 +530,278 @@ namespace CXCommunication
 			return -2;
 		}
 		return iRet;
+	}
+
+	bool CXFastDataParserHandle::ZlibCompressData(int iDeflateLevel,
+		byte *pbyInputBuf, size_t iInputBufLen,
+		byte *pbyOutputBuf, DWORD & dwOutputBufLen)
+	{
+		try
+		{
+			ZlibCompressor zlib;
+			size_t dwRemainLen = zlib.Put(pbyInputBuf, iInputBufLen);
+			zlib.MessageEnd();
+
+			if (dwRemainLen > 0)
+			{
+				return false;
+			}
+
+			word64 avail = zlib.MaxRetrievable();
+			if (avail > 0 && avail < dwOutputBufLen)
+			{
+				dwOutputBufLen = zlib.Get(pbyOutputBuf, dwOutputBufLen);
+				if (avail > dwOutputBufLen)
+				{
+					return false;
+				}
+			}
+			else
+			{
+				return false;
+			}
+
+			return true;
+		}
+		catch (const CryptoPP::Exception& e)
+		{
+			return false;
+		}
+	}
+
+	bool CXFastDataParserHandle::ZlibUncompressData(int iDeflateLevel,
+		byte *pbyInputBuf, size_t iInputBufLen,
+		byte *pbyOutputBuf, DWORD & dwOutputBufLen)
+	{
+		try
+		{
+			ArraySink *pArrDst = new ArraySink(pbyOutputBuf, dwOutputBufLen);
+			ZlibDecompressor unzlib(pArrDst);
+			size_t dwRemainLen = unzlib.Put(pbyInputBuf, iInputBufLen);
+			unzlib.MessageEnd();
+
+
+			dwOutputBufLen = pArrDst->TotalPutLength();
+			if (dwOutputBufLen == 0 || dwRemainLen > 0)
+			{
+				return false;
+			}
+			return true;
+		}
+		catch (const CryptoPP::Exception& e)
+		{
+			return false;
+		}
+	}
+
+	bool CXFastDataParserHandle::GzipCompressData(int iDeflateLevel,
+		byte *pbyInputBuf, size_t iInputBufLen,
+		byte *pbyOutputBuf, DWORD & dwOutputBufLen)
+	{
+		try
+		{
+			Gzip zipper;
+			size_t dwRemainLen = zipper.Put(pbyInputBuf, iInputBufLen);
+			zipper.MessageEnd();
+
+			if (dwRemainLen > 0)
+			{
+				return false;
+			}
+
+			word64 avail = zipper.MaxRetrievable();
+			if (avail > 0 && avail < dwOutputBufLen)
+			{
+				dwOutputBufLen = zipper.Get(pbyOutputBuf, dwOutputBufLen);
+				if (avail > dwOutputBufLen)
+				{
+					return false;
+				}
+			}
+			else
+			{
+				return false;
+			}
+
+			return true;
+		}
+		catch (const CryptoPP::Exception& e)
+		{
+			return false;
+		}
+	}
+
+	bool CXFastDataParserHandle::GzipUncompressData(int iDeflateLevel,
+		byte *pbyInputBuf, size_t iInputBufLen,
+		byte *pbyOutputBuf, DWORD & dwOutputBufLen)
+	{
+		try
+		{
+			ArraySink *pArrDst = new ArraySink(pbyOutputBuf, dwOutputBufLen);
+			Gunzip unzipper(pArrDst);
+			size_t dwRemainLen = unzipper.Put(pbyInputBuf, iInputBufLen);
+			unzipper.MessageEnd();
+
+
+			dwOutputBufLen = pArrDst->TotalPutLength();
+			if (dwOutputBufLen == 0 || dwRemainLen > 0)
+			{
+				return false;
+			}
+			return true;
+		}
+		catch (const CryptoPP::Exception& e)
+		{
+			return false;
+		}
+	}
+
+
+    unsigned long get_file_size(const char *path)
+    {
+        unsigned long filesize = -1;
+        struct stat statbuff;
+        if(stat(path, &statbuff) < 0){
+            return filesize;
+        }else{
+            filesize = statbuff.st_size;
+        }
+        return filesize;
+    }
+
+	bool CXFastDataParserHandle::ReadKeyFile(string strFilePathName, string &strOutputContent)
+	{
+		strOutputContent = "";
+		FILE * fileKey = fopen(strFilePathName.c_str(), "r");
+		if (fileKey == NULL)
+		{
+			return false;
+		}
+
+		int iPrivFileLen = 0;
+#ifdef WIN32
+		iPrivFileLen = filelength(fileno(fileKey));
+#else
+		iPrivFileLen = get_file_size(strFilePathName.c_str());
+#endif
+
+		char szFileData[CX_BUF_SIZE] = { 0 };
+		int  iTotalReadLen = 0;
+		int  iReadLenInOnce = CX_BUF_SIZE;
+
+		while (iTotalReadLen < iPrivFileLen)
+		{
+			iReadLenInOnce = CX_BUF_SIZE;
+			if (iReadLenInOnce > (iPrivFileLen - iTotalReadLen))
+			{
+				iReadLenInOnce = (iPrivFileLen - iTotalReadLen);
+			}
+
+			int iRead = fread(szFileData, 1, iReadLenInOnce, fileKey);
+
+			if (iRead <= 0)
+			{
+				if (feof(fileKey) != 0)
+				{
+					break;
+				}
+				else
+				{
+					fclose(fileKey);
+					return false;
+				}
+			}
+
+			strOutputContent += szFileData;
+			memset(szFileData, 0, CX_BUF_SIZE);
+		}
+		fclose(fileKey);
+		return true;
+	}
+
+	bool CXFastDataParserHandle::LoadRSAKeyFiles(string strPrivateFile, string strPublicFile)
+	{
+		if (strPrivateFile.length() > 0)
+		{
+			if (!ReadKeyFile(strPrivateFile, m_strPrivKey))
+			{
+				return false;
+			}
+		}
+
+		if (strPublicFile.length() > 0)
+		{
+			if (!ReadKeyFile(strPublicFile, m_strPubKey))
+			{
+				return false;
+			}
+		}
+	
+		return true;
+	}
+	bool CXFastDataParserHandle::LoadBlowfishKeyFiles(string strKeyFile, string strIvFile)
+	{
+		FILE * fileKey = NULL;
+		if (strKeyFile.length() > 0)
+		{
+			fileKey = fopen(strKeyFile.c_str(), "rb");
+			if (fileKey == NULL)
+			{
+				return false;
+			}
+
+			int iFileLen = 0;
+#ifdef WIN32
+			iFileLen = filelength(fileno(fileKey));
+#else
+			iFileLen = get_file_size(strKeyFile.c_str());
+#endif
+			if (iFileLen > 128)
+			{
+				fclose(fileKey);
+				return false;
+			}
+
+			int iRead = fread(m_byKey, 1, iFileLen, fileKey);
+			if (iRead != iFileLen)
+			{
+				fclose(fileKey);
+				return false;
+			}
+			m_iKeyLen = iFileLen;
+			fclose(fileKey);
+		}
+
+		if (strIvFile.length() > 0)
+		{
+			fileKey = fopen(strIvFile.c_str(), "rb");
+			if (fileKey == NULL)
+			{
+				return false;
+			}
+
+			int iFileLen = 0;
+#ifdef WIN32
+			iFileLen = filelength(fileno(fileKey));
+#else
+			iFileLen = get_file_size(strIvFile.c_str());
+#endif
+			if (iFileLen > 128)
+			{
+				fclose(fileKey);
+				return false;
+			}
+
+			int iRead = fread(m_byIv, 1, iFileLen, fileKey);
+			if (iRead != iFileLen)
+			{
+				fclose(fileKey);
+				return false;
+			}
+			m_iIvLen = iFileLen;
+			fclose(fileKey);
+		}
+
+		return true;
 	}
 }

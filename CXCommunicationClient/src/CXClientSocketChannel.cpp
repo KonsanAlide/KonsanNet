@@ -181,16 +181,17 @@ int CXClientSocketChannel::Login(const string &strUserName, const string &strPas
         SetRPCObjectGuid(byOldGuid);
         return -3;
     }
-    SetRPCObjectGuid(byOldGuid);
 
     memset(pData, 0, CLIENT_BUF_SIZE);
     DWORD dwMesCode = 0;
     iTransRet = RecvPacket(pData, CLIENT_BUF_SIZE, iTransDataLen, dwMesCode);
     if (iTransRet != 0)
     {
+        SetRPCObjectGuid(byOldGuid);
         Close();
         return -4;
     }
+    SetRPCObjectGuid(byOldGuid);
 
     if (dwMesCode != CX_SESSION_LOGIN_REPLY_CODE)
     {
@@ -207,7 +208,7 @@ int CXClientSocketChannel::Login(const string &strUserName, const string &strPas
     if (m_channelType == CXCommunication::CXClientSocketChannel::MAJOR_MES_CONNECTION)
     {
         char* pPos = strchr(pReply->szData, '\r');
-        if (pPos == NULL || (pPos - pReply->szData)>(pReply->dwDataLen - 1))
+        if (pPos == NULL || (DWORD)(pPos - pReply->szData)>(pReply->dwDataLen - 1))
         {
             m_strSessionID = "";
             m_strVerifyCode = "";

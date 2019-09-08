@@ -35,6 +35,7 @@ CXMessageProcessLevelBase::CXMessageProcessLevelBase()
     m_bStart = false;
 	m_pLogHandle = NULL;
     m_pRPCObjectManager = NULL;
+	m_pThread = NULL;
 }
 
 
@@ -42,6 +43,15 @@ CXMessageProcessLevelBase::~CXMessageProcessLevelBase()
 {
 }
 
+DWORD CXMessageProcessLevelBase::Run(void *pThis)
+{
+	if (pThis == NULL)
+	{
+		return DWORD(-1);
+	}
+	return ((CXMessageProcessLevelBase*)pThis)->ProcessMessage();
+}
+/*
 int  CXMessageProcessLevelBase::Run()
 {
     RunFun funThread = &ThreadProcess;
@@ -56,6 +66,7 @@ int  CXMessageProcessLevelBase::Run()
     m_bStart = true;
     return RETURN_SUCCEED;
 }
+*/
 
 int CXMessageProcessLevelBase::ProcessMessage()
 {
@@ -63,6 +74,7 @@ int CXMessageProcessLevelBase::ProcessMessage()
     int iLoopNum = 0;
 	int64 iBeginTimeInProcess = 0;
     CXGuidObject guidObj(false);
+	m_bStart = true;
     CXMessageQueue * pQueue = GetMessageQueue();
     while (IsStart())
     {
@@ -96,7 +108,16 @@ int CXMessageProcessLevelBase::ProcessMessage()
                     uiSequenceNum, pCon->GetConnectionIndex(), pMes);
                 //m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
 
-                iRet = pCon->ProcessUnpackedMessage(pMes);
+				if (pMes->dwType == 2) //async call
+				{
+					pCon->ProcessAsyncMessageEnd(pMes);
+					pCon->FreeBuffer(pMes);
+					pCon->ProcessUnpackedMessage(NULL);
+				}
+				else
+				{
+					iRet = pCon->ProcessUnpackedMessage(pMes);
+				}
                 
                 /*
                 int64  iEndTime = pCon->GetCurrentTimeMS();
@@ -140,7 +161,8 @@ void* ThreadProcess(void* lpvoid)
 void CXMessageProcessLevelBase::Stop()
 {
     m_bStart = false;
-    m_threadProcess.Wait();
+    if(m_pThread!=NULL)
+        m_pThread->Wait();
 }
 
 int CXMessageProcessLevelBase::ProcessConnectionError(CXConnectionObject * pCon)

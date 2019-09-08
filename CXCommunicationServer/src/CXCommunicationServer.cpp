@@ -18,6 +18,7 @@ Description£º
 #include "CXCommunicationServer.h"
 #include "CXMessageProcessLevelBase.h"
 #include "PlatformFunctionDefine.h"
+#include "CXTaskCreateConnection.h"
 #include <time.h>
 //extern CXSpinLock g_lock;
 //extern int g_iTotalCloseNum;
@@ -36,6 +37,14 @@ CXCommunicationServer::CXCommunicationServer()
 	m_pJouralLogHandle = NULL;
 
     srand((unsigned)time(NULL));
+
+	m_dwTaskPoolSize = 128;
+	m_dwInitTaskQueueSize = 10240;
+
+	m_bAsyncParseData = true;
+
+	//use task pool to process the data needed to send, compress and encrypt it asynchronously
+	m_bAsyncPrepareData = true;
 }
 
 CXCommunicationServer::~CXCommunicationServer()
@@ -49,19 +58,26 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
     {
         return INVALID_PARAMETER;
     }
+	char szInfo[1024] = { 0 };
     if (0 != m_networkInit.InitEnv())
     {
-        return -7;
+		DWORD dwError = GetLastError();
+		sprintf_s(szInfo, 1024, "Failed to call the WSAStartup() ,error code is %d\n", dwError);
+		m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+        return -8;
     }
 
     map<DWORD, DWORD>mapCacheConfig;
     mapCacheConfig[256] = 1024;
     mapCacheConfig[4096] = 1024;
-    mapCacheConfig[524288] = 512;
+    mapCacheConfig[524288] = 64;
+    mapCacheConfig[1048576] = 32;
     int nRet = m_memoryCacheManager.Init(mapCacheConfig);
     if (nRet != 0)
     {
-        cout << "Failed to start memory cache manager" << endl;
+        DWORD dwError = GetLastError();
+        sprintf_s(szInfo, 1024, "Failed to create the memory cache pool ,error code is %d\n", dwError);
+        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
         return -2;
     }
 
@@ -69,6 +85,8 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
 	m_ioStat.Start();
 
     m_connectionsManager.SetLogHandle(m_pLogHandle);
+	m_connectionsManager.SetObjectPool((void*)&m_rpcObjectManager);
+	
 
     m_socketServerKernel.SetOnReadCallbackFun(CXCommunicationServer::OnRecv);
     m_socketServerKernel.SetOnCloseCallbackFun(CXCommunicationServer::OnClose);
@@ -76,8 +94,29 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
     m_socketServerKernel.SetServer((void*)this);
     m_socketServerKernel.SetLogHandle(m_pLogHandle);
 
-    int iMessageProcessObjInOneQueue =4;
-    int iReadQueueNumber = 4;
+	int iMessageProcessObjInOneQueue = 4;
+	int iReadQueueNumber = 4;
+
+	int iMesThreadPoolNum = (iMessageProcessObjInOneQueue * iReadQueueNumber)*2;
+	if (!m_threadPoolDispatch.CreatePool(iMesThreadPoolNum))
+	{
+        DWORD dwError = GetLastError();
+        sprintf_s(szInfo, 1024, "Failed to create the thread pool to process message ,error code is %d\n", dwError);
+        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+		return -10;
+	}
+    
+    if (0!=m_taskPool.Create(m_dwTaskPoolSize, m_dwInitTaskQueueSize,&m_memoryCacheManager,true,1024*1024))
+    {
+        DWORD dwError = GetLastError();
+        sprintf_s(szInfo, 1024, "Failed to create the task pool to run time-consuming tasks ,error code is %d\n", dwError);
+        m_pLogHandle->Log(CXLog::CXLOG_ERROR, szInfo);
+        return -11;
+    }
+	m_taskPool.RegisterTaskClass(&m_taskCreateConnectionBase);
+	m_taskPool.RegisterTaskClass(&m_taskParseMessageBase);
+	m_taskPool.RegisterTaskClass(&m_taskPrepareMessageBase);
+
     int iRet = m_dataDispathManager.Start(this, iReadQueueNumber);
     if (iRet != RETURN_SUCCEED)
     {
@@ -97,16 +136,22 @@ int CXCommunicationServer::Start(unsigned short iListeningPort, int iWaitThreadN
                 pProcessObj->SetMessageQueue(pQueue);
 				pProcessObj->SetLogHandle(m_pLogHandle);
                 pProcessObj->SetRPCObjectManager(&m_rpcObjectManager);
-                iRet = pProcessObj->Run();
-                if (iRet != 0)
-                {
-                    bSucceed = false;
-                    break;
-                }
-                else
-                {
-                    m_lstMessageProcess.push_back((void*)pProcessObj);
-                }
+				CXThread* pThread = m_threadPoolDispatch.GetFreeThread();
+				if (pThread != NULL)
+				{
+					if (0 != pThread->Start(pProcessObj->Run, (void*)pProcessObj))
+					{
+						bSucceed = false;
+						break;
+					}
+				}
+				else
+				{
+					bSucceed = false;
+					break;
+				}
+                
+                m_lstMessageProcess.push_back((void*)pProcessObj);  
             }
 
             if (!bSucceed)
@@ -159,13 +204,13 @@ int CXCommunicationServer::Stop()
         pProcessObj->Stop();
         delete pProcessObj;
     }
+	m_threadPoolDispatch.Destroy();
     m_bRunning = false;
 	m_ioStat.Stop();
     return RETURN_SUCCEED;
 }
 
-int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBufObj,DWORD dwTransDataOfBytes,
-	byte* pbyThreadCache, DWORD dwCacheLen)
+int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBufObj,DWORD dwTransDataOfBytes)
 {
     //char szInfo[1024] = { 0 };
     //sprintf_s(szInfo, 1024, "OnRecv, Reveive a complete event ,dwNumberOfBytes=%d,pBufObj=%x,pBufObj->nOperate=%d\n",
@@ -202,7 +247,7 @@ int  CXCommunicationServer::OnRecv(CXConnectionObject &conObj, PCXBufferObj pBuf
     //conObj.FreeCXBufferObj(pBufObj);
     //return 0;
 
-    iRet = conObj.RecvPacket(pBufObj, dwTransDataOfBytes, pbyThreadCache, dwCacheLen);
+    iRet = conObj.RecvPacket(pBufObj, dwTransDataOfBytes);
     if (iRet != 0)
     {
         bNeedClose = true;
@@ -270,16 +315,14 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
 
     char  szInfo[1024] = { 0 };
     CXConnectionSession * pSession = (CXConnectionSession *)conObj.GetSession();
-    sprintf_s(szInfo, 1024, "Receive a command to close the connection , connection index is %lld,session is %x,connection is %x\n",
-                    conObj.GetConnectionIndex(), pSession,&conObj);
-    //m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
-    /*
-    printf("Prepare to close connection ,connetcion id=%lld,connections=%lld,state:%d,post number=%lld,buffer in list=%lld,buffer in queue=%lld,emClosedType=%d\n",
-         conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber(), conObj.GetState(),
-        conObj.GetNumberOfPostBuffers(), conObj.GetNumberOfReceivedBufferInList(), 
-		conObj.GetNumberOfReceivedPacketInQueue(),emClosedType);
-    */
 
+    /*
+    sprintf_s(szInfo, 1024, "Prepare to close connection ,connetcion id=%lld,connections=%lld,state:%d,post_sent number=%lld,post_recv number=%lld,buffer in list=%lld,buffer in queue=%lld,emClosedType=%d\n",
+         conObj.GetConnectionIndex(), m_connectionsManager.GetTotalConnectionsNumber(), conObj.GetState(),
+        conObj.GetPostedSentBuffersNumber(), conObj.GetPostedRecvBuffersNumber(), conObj.GetNumberOfReceivedBufferInList(),
+		conObj.GetNumberOfReceivedPacketInQueue(),emClosedType);
+    m_pLogHandle->Log(CXLog::CXLOG_DEBUG, szInfo);
+    */
     if (conObj.GetState() == CXConnectionObject::CLOSED)
     {
         if (bLockBySelf)
@@ -301,29 +344,34 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
     // there may be a situation that the left buffer contain one or more not complete packet,
     // how we process it?
     if (conObj.GetNumberOfReceivedBufferInList() == 0
-        && conObj.GetNumberOfPostBuffers() == 0
+        && conObj.GetPostedSentBuffersNumber() == 0
+        && conObj.GetPostedRecvBuffersNumber() == 0
         && conObj.GetNumberOfReceivedPacketInQueue() == 0)
     {
         conObj.SetState(CXConnectionObject::CLOSED);
-        
-        //CXConnectionSession * pSession = (CXConnectionSession *)conObj.GetSession();
+
+        char  szInfo[1024] = { 0 };
+        string strSessionID = "";
         if (pSession != NULL)
         {
+            strSessionID = pSession->GetSessionGuid();
             pSession->RemoveConnection(conObj);
-            //m_sessionsManager.Lock();
             if (pSession->GetConnectionNumber() == 0)
             {
-                char  szInfo[1024] = { 0 };
-                sprintf_s(szInfo, 1024, "Close a session , guid is %s,connection index is %lld,session is %x,connection is %x\n",
-                    pSession->GetSessionGuid().c_str(), conObj.GetConnectionIndex(), pSession,&conObj);
-                //m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
+                sprintf_s(szInfo, 1024, "Session closed, session_id:%s\n",pSession->GetSessionGuid().c_str());
+                m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
 
                 m_sessionsManager.CloseSession(pSession);
             }
-            //m_sessionsManager.UnLock();
         }
+
         conObj.RecordReleasedTime();
         m_connectionsManager.ReleaseConnection(&conObj);
+
+        sprintf_s(szInfo, 1024, "Connection closed, session_id:%s, connection_id:%lld, running_connections_nubmer:%lld\n",
+            strSessionID.c_str(), conObj.GetConnectionIndex(),
+            m_connectionsManager.GetTotalConnectionsNumber());
+        m_pLogHandle->Log(CXLog::CXLOG_INFO, szInfo);
     }
     if (bLockBySelf)
         conObj.UnLock();
@@ -331,13 +379,36 @@ void CXCommunicationServer::CloseConnection(CXConnectionObject &conObj, Connecti
     //g_lock.Lock();
     //g_iTotalProcessCloseNum--;
     //g_lock.Unlock();
-
 }
 
 //have beed locked by CXConnectionObject::lock
 int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &addrRemote)
 {
+    if (pServer == NULL)
+    {
+        return INVALID_PARAMETER;
+    }
+
     CXCommunicationServer * pComServer = (CXCommunicationServer*)pServer;
+    //ConnectionsManager.AddUsingConnection(pConObj);
+    char szBuffer[64] = { 0 };
+    byte *bytes = (byte*)&addrRemote.sin_addr;
+    sprintf_s(szBuffer, 64, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);
+    string strRemoteIP = szBuffer;
+    WORD wRemotePort = ntohs(addrRemote.sin_port);
+
+	CXConnectionObject *pConObj = NULL;
+
+    //printf( "accept a connection from %s,connection id =%I64i\n",
+    //    inet_ntoa(addrRemote.sin_addr), pConObj->GetConnectionIndex());
+
+    return pComServer->BuildConnection(sock, strRemoteIP, wRemotePort,&pConObj);
+}
+
+int CXCommunicationServer::BuildConnection(cxsocket sock, const string &strRemoteIp, WORD wRemotePort,
+	CXConnectionObject **ppConObj, bool bProxy)
+{
+    CXCommunicationServer * pComServer = (CXCommunicationServer*)this;
 
     CXSocketServerKernel & SocketKernel = pComServer->GetSocketSeverKernel();
     CXConnectionsManager & ConnectionsManager = pComServer->GetConnectionManager();
@@ -345,30 +416,45 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
     CXDataDispathLevelImpl & DataDispather = pComServer->GetDataDispathManger();
 
     CXConnectionObject *pConObj = ConnectionsManager.GetFreeConnectionObj();
-    //CXElasticMemoryCache *pCache = MemoryCacheManager.GetMemoryCache(sizeof(CXBufferObj));
+    CXConnectionSession *pSession = NULL;
+	*ppConObj = NULL;
+
+    if (bProxy)
+    {
+        pSession = m_sessionsManager.GetFreeSession();
+        if (pSession == NULL)
+        {
+			closesocket(sock);
+            return -7;
+        }
+
+#ifndef WIN32
+		SocketKernel.SetNonblocking(sock);
+#endif
+    }
 
     CXSessionsManager & sessionsManager = pComServer->GetSessionsManager();
 
-    //PSocketObj  pObj = m_connectionManager.AddPendingConnection(nAcceptSock,(void*)this);
-    if (pConObj != NULL )
+    if (pConObj != NULL)
     {
-        pConObj->Build(sock, ConnectionsManager.GetCurrentConnectionIndex(), addrRemote);
-        pConObj->SetServer(pServer);
+        pConObj->Build(sock, ConnectionsManager.GetCurrentConnectionIndex(), strRemoteIp, wRemotePort);
+        pConObj->SetServer((void*)this);
         pConObj->SetObjectSizeInCache(sizeof(CXBufferObj));
         pConObj->SetProcessOnePacketFun(CXCommunicationServer::OnProcessOnePacket);
         pConObj->SetSessionsManager(&sessionsManager);
         pConObj->SetLogHandle(pComServer->GetLogHandle());
-		pConObj->SetJournalLogHandle(pComServer->GetJournalLogHandle());
+        pConObj->SetJournalLogHandle(pComServer->GetJournalLogHandle());
         pConObj->SetIOStat(pComServer->GetIOStatHandle());
-		pConObj->SetRPCObjectManager(pComServer->GetRPCObjectManager());
-		pConObj->SetSocketKernel((void*)&pComServer->GetSocketSeverKernel());
-		pConObj->SetDataParserHandle(pComServer->GetDataParserHandle());
-
+        pConObj->SetRPCObjectManager(pComServer->GetRPCObjectManager());
+        pConObj->SetSocketKernel((void*)&pComServer->GetSocketSeverKernel());
+        pConObj->SetDataParserHandle(pComServer->GetDataParserHandle());
+        pConObj->SetProxyConnection(bProxy);
+		pConObj->SetTaskPool(pComServer->GetTaskPool());
 
         //char *str = inet_ntoa(sockRemote.sin_addr);
         //cout << "accept a connection from " << str << endl;
 
-        int iQueueIndex = rand()%DataDispather.GetQueueNumber();
+        int iQueueIndex = rand() % DataDispather.GetQueueNumber();
         pConObj->SetDispacherQueueIndex(iQueueIndex);
         pConObj->SetMemoryCache(&MemoryCacheManager);
 
@@ -376,10 +462,11 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
         if (iRet == 0)
         {
             ConnectionsManager.AddUsingConnection(pConObj);
+			pConObj->SetState(CXConnectionObject::ESTABLISHED);
 #ifdef WIN32
             bool bNeedClose = false;
             //when accept a socket, post some
-            for (int i = 0; i<1; i++)
+            for (int i = 0; i < 1; i++)
             {
                 int iRet = pConObj->PostRecv(sizeof(CXBufferObj));
                 if (iRet != RETURN_SUCCEED)
@@ -391,8 +478,20 @@ int  CXCommunicationServer::OnAccept(void *pServer, cxsocket sock, sockaddr_in &
             if (bNeedClose)
             {
                 pComServer->CloseConnection(*pConObj, SOCKET_CLOSED);
+                return -8;
             }
 #endif
+            if (bProxy)
+            {
+                string strGuid = m_sessionsManager.BuildSessionGuid();
+                pSession->AddMainConnection(*pConObj);
+                pSession->SetSesssionGuid(strGuid);
+                pSession->ResetVerificationInfo();
+                m_sessionsManager.AddUsingSession(pSession);
+                pConObj->SetSession(pSession);
+            }
+
+			*ppConObj = pConObj;
         }
         else
         {
@@ -470,11 +569,212 @@ unsigned int CXCommunicationServer::GetCurrentThreadID()
 #endif
 }
 
-CXThread *CXCommunicationServer::GetCurrrentThrad()
+CXThread *CXCommunicationServer::GetCurrrentThread()
 {
     CXThread * pThread = NULL;
-    UINT32 uiThradID = GetCurrentThreadID();
+    DWORD uiThradID = GetCurrentThreadID();
+	pThread = m_socketServerKernel.FindThread((DWORD)uiThradID);
+	if (pThread == NULL)
+	{
+		pThread = m_threadPoolDispatch.FindThread((DWORD)uiThradID);
+	}
     return pThread;
 }
+
+byte *CXCommunicationServer::GetFirstThreadCache(DWORD dwSize)
+{
+	CXThread *pThread = GetCurrrentThread();
+	if (pThread == NULL)
+	{
+		return NULL;
+	}
+	byte* pbyCache = pThread->GetFirstCache();
+	DWORD dwCacheLen = pThread->GetFirstCacheSize();
+
+	if (dwCacheLen < dwSize)
+	{
+		if (pThread->AllocateFirstCache(dwSize))
+		{
+            pbyCache = pThread->GetFirstCache();
+            if(pbyCache!=NULL)
+                memset(pbyCache, 0, dwSize);
+			return pbyCache;
+		}
+		else
+		{
+			return NULL;
+		}
+	}
+	else
+	{
+        if (pbyCache != NULL)
+            memset(pbyCache, 0, dwSize);
+		return pbyCache;
+	}
+}
+byte *CXCommunicationServer::GetSecondThreadCache(DWORD dwSize)
+{
+	CXThread *pThread = GetCurrrentThread();
+	if (pThread == NULL)
+	{
+		return NULL;
+	}
+	byte* pbyCache = pThread->GetSecondCache();
+	DWORD dwCacheLen = pThread->GetSecondCacheSize();
+
+	if (dwCacheLen < dwSize)
+	{
+		if (pThread->AllocateSecondCache(dwSize))
+		{
+			pbyCache = pThread->GetSecondCache();
+            if (pbyCache != NULL)
+                memset(pbyCache, 0, dwSize);
+			return pbyCache;
+		}
+		else
+		{
+			return NULL;
+		}
+	}
+	else
+	{
+        if (pbyCache != NULL)
+            memset(pbyCache, 0, dwSize);
+		return pbyCache;
+	}
+}
+
+CXTaskBase *CXCommunicationServer::GetCreateConnectionTask()
+{
+	CXTaskPool* pTaskPool = (CXTaskPool*)GetTaskPool();
+	if (pTaskPool == NULL)
+		return NULL;
+	CXTaskCreateConnection *pTask = (CXTaskCreateConnection *)pTaskPool->GetFreeTaskObject(CXTaskBase::CX_RUNING_TASK_TYPE_CREATE_CONNECITON);
+	if (pTask!=NULL)
+	{
+		//string strRemoteIp = "127.0.0.1";
+        string strRemoteIp = "192.168.0.118";
+		string strLocalIp = "";
+		WORD   wRemotePort = 4354;
+		WORD   wLocalPort = 0;
+		string strUserName = "test";
+		string strPwd = "123";
+		string strKey = "123";
+		pTask->SetAddrInfo(strRemoteIp, wRemotePort,strLocalIp, wLocalPort,(void*)this);
+		pTask->SetUserInfo(strUserName, strPwd);
+		//pTask->SetKey(strKey, true);
+	}
+
+	return pTask;
+}
+
+CXConnectionObject *CXCommunicationServer::GetProxyConnection(string strRemoteIp, WORD wRemotePort)
+{
+	CXConnectionObject* pConObj = m_connectionsManager.GetFreeProxyClient(strRemoteIp, wRemotePort);
+	if (pConObj == NULL)
+	{
+		return NULL;
+	}
+    if (pConObj->GetState() == CXConnectionObject::ESTABLISHED)
+    {
+        return pConObj;
+    }
+
+	CXConnectionSession *pSession = NULL;
+	pSession = m_sessionsManager.GetFreeSession();
+	if (pSession == NULL)
+	{
+		m_connectionsManager.AddFreeConnectionObj(pConObj);
+		return NULL;
+	}
+	
+	pConObj->Build(0, m_connectionsManager.GetCurrentConnectionIndex(), strRemoteIp, wRemotePort);
+	pConObj->SetState(CXConnectionObject::CREATING);
+	pConObj->SetServer((void*)this);
+	pConObj->SetObjectSizeInCache(sizeof(CXBufferObj));
+	pConObj->SetProcessOnePacketFun(CXCommunicationServer::OnProcessOnePacket);
+	pConObj->SetSessionsManager(&m_sessionsManager);
+	pConObj->SetLogHandle(GetLogHandle());
+	pConObj->SetJournalLogHandle(GetJournalLogHandle());
+	pConObj->SetIOStat(GetIOStatHandle());
+	pConObj->SetRPCObjectManager(GetRPCObjectManager());
+	pConObj->SetSocketKernel((void*)&GetSocketSeverKernel());
+	pConObj->SetDataParserHandle(GetDataParserHandle());
+	pConObj->SetProxyConnection(true);
+	pConObj->SetTaskPool(GetTaskPool());
+
+	int iQueueIndex = rand() % m_dataDispathManager.GetQueueNumber();
+	pConObj->SetDispacherQueueIndex(iQueueIndex);
+	pConObj->SetMemoryCache(&m_memoryCacheManager);
+
+	//m_connectionsManager.AddUsingConnection(pConObj);
+
+	string strGuid = m_sessionsManager.BuildSessionGuid();
+	//pSession->AddMainConnection(*pConObj);
+	pSession->SetSesssionGuid(strGuid);
+	pSession->ResetVerificationInfo();
+	//m_sessionsManager.AddUsingSession(pSession);
+	pConObj->SetSession(pSession);
+	return pConObj;
+}
+
+//the proxy connection have been created, add it to the using map and communication model
+int  CXCommunicationServer::OnProxyConnectionCreated(CXConnectionObject *pConObj)
+{
+	if (pConObj == NULL)
+	{
+		return CXRET_INVALID_PARAMETER;
+	}
+	CXConnectionSession *pSession = (CXConnectionSession *)pConObj->GetSession();
+#ifndef WIN32
+    m_socketServerKernel.SetNonblocking(pConObj->GetSocket());
+#endif
+	int iRet = m_socketServerKernel.AttachConnetionToModel(*pConObj);
+	if (iRet == 0)
+	{
+		m_connectionsManager.AttachProxyConnection(pConObj);
+		pConObj->SetState(CXConnectionObject::ESTABLISHED);
+#ifdef WIN32
+		bool bNeedClose = false;
+		//when accept a socket, post some
+		for (int i = 0; i < 1; i++)
+		{
+			int iRet = pConObj->PostRecv(sizeof(CXBufferObj));
+			if (iRet != CXRET_SUCCEED)
+			{
+				bNeedClose = true;
+				break;
+			}
+		}
+		if (bNeedClose)
+		{
+			CloseConnection(*pConObj, SOCKET_CLOSED);
+			return -8;
+		}
+#endif
+		pSession->AddMainConnection(*pConObj);
+		m_sessionsManager.AddUsingSession(pSession);
+		return CXRET_SUCCEED;
+	}
+	else
+	{
+		pConObj->Close();
+		pConObj->SetState(CXConnectionObject::CLOSED);
+		//pComServer->CloseConnection(*pConObj);
+		m_connectionsManager.AddFreeConnectionObj(pConObj);
+		return -4;
+	}
+
+}
+
+void CXCommunicationServer::DetachProxyConnection(CXRPCObjectClientInServer *pObj)
+{
+    CXConnectionObject *pCon = pObj->GetAttachConnection();
+    if (pCon != NULL)
+    {
+        m_connectionsManager.DetachProxyConnection(pCon);
+    }
+}
+
 
 

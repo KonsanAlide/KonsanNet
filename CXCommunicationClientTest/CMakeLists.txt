@@ -16,15 +16,23 @@ INCLUDE_DIRECTORIES(
 ../CXThread/include
 ../CXLog/include
 ../CXDataParser/include
+../CXMemoryCache/include
+../CXFile/include
 ../CXCommunicationClient/include
 ./include
 )
 
-aux_source_directory(src DIR_SRCS)
+aux_source_directory(./src DIR_SRCS)
+file (GLOB HEADERS "./include/*.h")
+SET(DIR_SRCS ${DIR_SRCS} ${HEADERS})
+source_group("Header Files" FILES ${HEADERS})
 
 
 IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
- SET(option WIN32)
+ #SET(option WIN32)
+ SET(CMAKE_BUILD_TYPE "Debug")
+ SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+ SET(CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
  #set extern libraries
  SET(LIBRARIES
      ws2_32.lib
@@ -47,7 +55,7 @@ IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 	LINK_DIRECTORIES(../../third_libs/i386/windows/debug)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     LINK_DIRECTORIES(../../lib)
-	LINK_DIRECTORIES(../../third_libs/i386/linux)
+	LINK_DIRECTORIES(../../third_libs/x64/linux)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 
 SET(EXECUTABLE_OUTPUT_PATH ../../bin)
@@ -66,6 +74,7 @@ IF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 	TARGET_LINK_LIBRARIES(CXCommunicationClientTest cryptlib.lib)
 	TARGET_LINK_LIBRARIES(CXCommunicationClientTest snappy.lib)
 	TARGET_LINK_LIBRARIES(CXCommunicationClientTest CXDataParser_static.lib)
+	TARGET_LINK_LIBRARIES(CXCommunicationClientTest CXMemoryCache_static.lib)
 	TARGET_LINK_LIBRARIES(CXCommunicationClientTest CXCommunicationClient_static.lib)
 ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXCommon.so)
@@ -75,6 +84,10 @@ ELSE (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXThread.so)
     TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXLog.so)
     TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXFile.so)
+	TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXMemoryCache.so)
+	#TARGET_LINK_LIBRARIES(CXCommunicationClientTest libcryptopp.a)
+	#TARGET_LINK_LIBRARIES(CXCommunicationClientTest libsnappy.a)
+	TARGET_LINK_LIBRARIES(CXCommunicationClientTest uuid)
 	TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXCommunicationClient.so)
 	TARGET_LINK_LIBRARIES(CXCommunicationClientTest libCXDataParser.so)
 ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")

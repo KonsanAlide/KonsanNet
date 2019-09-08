@@ -42,7 +42,9 @@ namespace CXCommunication
         virtual ~CXMessageProcessLevelBase();
         void SetMessageQueue(CXMessageQueue* pQueue) { m_pMessageQueue = pQueue; }
         CXMessageQueue * GetMessageQueue() { return m_pMessageQueue; }
-        int  Run();
+
+		static DWORD Run(void *pThis);
+
         bool IsStart() { return m_bStart; }
         virtual int  ProcessMessage();
 
@@ -55,8 +57,11 @@ namespace CXCommunication
         void SetRPCObjectManager(CXRPCObjectManager * handle) { m_pRPCObjectManager = handle; }
         CXRPCObjectManager *GetRPCObjectManager() { return m_pRPCObjectManager; }
 
+		void SetThread(CXThread *pThread) { m_pThread= pThread; }
+		CXThread* GetThread() { return m_pThread; }
+
     private:
-        CXThread m_threadProcess;
+		CXThread  *m_pThread;
         CXMessageQueue *m_pMessageQueue;
 
         bool   m_bStart;

@@ -1,5 +1,8 @@
 #pragma once
 #include "CUnitTestBase.h"
+#ifdef WIN32
+#include<windows.h>
+#endif
 
 class CCryptoppTest :public CUnitTestBase
 {
