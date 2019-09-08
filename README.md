@@ -61,5 +61,5 @@
 *  2.add a thread cache to reduce the locks
 
 ## Notice: 
-*  1.after compile this project, you need to unzip the cryptlib.zip in path:'third_libs/i386/windows/debug', and unzip the libcryptopp.zip in the path:'third_libs/x64/linux' 
+*  1.before compile this project, you need to unzip the cryptlib.zip in path:'third_libs/i386/windows/debug', and unzip the libcryptopp.zip in the path:'third_libs/x64/linux' 
 
