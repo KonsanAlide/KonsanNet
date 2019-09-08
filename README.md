@@ -1,4 +1,4 @@
-# CXCommunicationFramework
+# KonsanNet communication framework
 * A free network communication framework, written in c++.
 * Contain the server and the client.
 * Support Linux, Windows platform.
