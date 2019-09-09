@@ -50,6 +50,8 @@
 *  1.Add task pool to run the time-consuming task, like: compression, encryption, connect to remote used tcp stream, and so on .
 *  2.Add RPC client in the server, and use it to access the the RPC Object in the third-party program
 *  3.Add the function used threads to compress and encrypt data, and asynchronously send it.
+*  4.Add a state machine logic in the RPC object, let it asynchronously access other object.
+*  5.Add a thread pool.
    
 ## Remaining issues:
 *  1.add the timeout process logic in the message processing
@@ -58,7 +60,10 @@
 ## Modified stuff: 
 ### this version modify some things, show as:  
 *  1.fix the bug that mistakenly use the condition in the CXEvent,
-*  2.add a thread cache to reduce the locks
+*  2.add a thread cache in the task thread, use local thread cache to reduce the access times to the memory cache. 
+*  3.add the forward logic and state machine logic to access the remote object in the server. 
+*  4.migrate the compression and encryption to the asynchronous task thread
+*  5.add thread pool to elastically use threads
 
 ## Notice: 
 *  1.before compile this project, you need to unzip the cryptlib.zip in path:'third_libs/i386/windows/debug', and unzip the libcryptopp.zip in the path:'third_libs/x64/linux' 
